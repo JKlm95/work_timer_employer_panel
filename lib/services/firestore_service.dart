@@ -59,7 +59,15 @@ class FirestoreService {
 
   Stream<List<TrackedEmployee>> trackedEmployeesStream(String employerUid) {
     return _employerTracked(employerUid).snapshots().map((s) {
-      return s.docs.map((d) => TrackedEmployee.fromDoc(d.id, d.data())).toList();
+      final list = s.docs.map((d) => TrackedEmployee.fromDoc(d.id, d.data())).toList();
+      list.sort((a, b) {
+        final ad = a.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final c = bd.compareTo(ad);
+        if (c != 0) return c;
+        return a.id.compareTo(b.id);
+      });
+      return list;
     });
   }
 

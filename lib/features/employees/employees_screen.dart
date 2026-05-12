@@ -79,6 +79,9 @@ class EmployeesScreen extends StatelessWidget {
                                   child: ConstrainedBox(
                                     constraints: BoxConstraints(minWidth: MediaQuery.sizeOf(context).width - 48),
                                     child: _EmployeesTable(
+                                      key: ValueKey(
+                                        tracked.map((e) => e.id).join(','),
+                                      ),
                                       tracked: tracked,
                                       groups: groups,
                                       firestore: firestore,
@@ -102,6 +105,7 @@ class EmployeesScreen extends StatelessWidget {
 
 class _EmployeesTable extends StatefulWidget {
   const _EmployeesTable({
+    super.key,
     required this.tracked,
     required this.groups,
     required this.firestore,
@@ -129,7 +133,8 @@ class _EmployeesTableState extends State<_EmployeesTable> {
         final loading = snap.connectionState == ConnectionState.waiting;
         return DataTable(
           headingRowHeight: 48,
-          dataRowMinHeight: 52,
+          dataRowMinHeight: 48,
+          dataRowMaxHeight: 72,
           columns: const [
             DataColumn(label: Text('Employee')),
             DataColumn(label: Text('Company')),

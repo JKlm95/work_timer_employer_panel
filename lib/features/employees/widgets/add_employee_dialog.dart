@@ -11,7 +11,7 @@ Future<void> showAddEmployeeDialog(BuildContext context, FirestoreService firest
 
   await showDialog<void>(
     context: context,
-    builder: (ctx) {
+    builder: (dialogContext) {
       return StatefulBuilder(
         builder: (context, setLocal) {
           Future<void> submit() async {
@@ -34,13 +34,22 @@ Future<void> showAddEmployeeDialog(BuildContext context, FirestoreService firest
                 employeeWorkEmailInput: workEmail,
                 companyNameInput: company,
               );
-              if (context.mounted) Navigator.of(context).pop();
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
             } on EmployerLinkException catch (e) {
-              setLocal(() => error = e.message);
+              if (context.mounted) {
+                setLocal(() {
+                  loading = false;
+                  error = e.message;
+                });
+              }
             } catch (_) {
-              setLocal(() => error = 'Could not add employee. Try again.');
-            } finally {
-              setLocal(() => loading = false);
+              if (context.mounted) {
+                setLocal(() {
+                  loading = false;
+                  error = 'Could not add employee. Try again.';
+                });
+              }
             }
           }
 
@@ -77,7 +86,10 @@ Future<void> showAddEmployeeDialog(BuildContext context, FirestoreService firest
               ),
             ),
             actions: [
-              TextButton(onPressed: loading ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: loading ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: loading ? null : submit,
                 child: loading

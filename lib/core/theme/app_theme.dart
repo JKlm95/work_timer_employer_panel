@@ -42,6 +42,11 @@ ThemeData buildAppTheme() {
         fontSize: 13,
       ),
       dataTextStyle: const TextStyle(fontSize: 13, color: Color(0xFF111827)),
+      // Keep min <= max; per-widget overrides (e.g. dataRowMinHeight: 52) otherwise merge
+      // with defaults and can produce 52 <= h <= 48 on web.
+      headingRowHeight: 48,
+      dataRowMinHeight: 48,
+      dataRowMaxHeight: 72,
     ),
   );
 }
