@@ -1,5 +1,9 @@
 import '../../models/tracked_employee.dart';
 
+/// Display helpers for [TrackedEmployee]. First/last name values come from `userEmailIndex`
+/// (merged in [FirestoreService.trackedEmployeesStream] / [TrackedEmployee.mergedWithUserEmailIndex]),
+/// never from workspace documents.
+
 /// Primary label for lists — same as [TrackedEmployee.fullName].
 String employeeFullName(TrackedEmployee t) => t.fullName;
 

@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 
+import 'user_email_index.dart';
+
 /// Employer-side link to an employee — stored under `employers/{employerUid}/trackedEmployees`.
 ///
-/// Name fields are copied from `userEmailIndex` when linking and can be refreshed via
-/// [FirestoreService.syncTrackedEmployeeProfilesFromIndex].
+/// Personal fields are written from [UserEmailIndex] at link time; the list stream merges live
+/// index data for display ([mergedWithUserEmailIndex]). Optional persistence refresh:
+/// [FirestoreService.syncTrackedEmployeeProfileFromIndex].
 class TrackedEmployee extends Equatable {
   const TrackedEmployee({
     required this.id,
@@ -42,6 +45,33 @@ class TrackedEmployee extends Equatable {
     final d = displayName?.trim();
     if (d != null && d.isNotEmpty) return d;
     return employeeEmail;
+  }
+
+  /// Overlay for UI: when [index] is non-null, personal fields come **only** from the index
+  /// (never from workspace). When [index] is null, returns `this` (Firestore snapshot).
+  TrackedEmployee mergedWithUserEmailIndex(UserEmailIndex? index) {
+    if (index == null) return this;
+    String nz(String s) => s.trim();
+    String? opt(String? s) {
+      final t = nz(s ?? '');
+      return t.isEmpty ? null : t;
+    }
+
+    return TrackedEmployee(
+      id: id,
+      employeeUid: nz(index.uid).isNotEmpty ? index.uid.trim() : employeeUid,
+      employeeEmail: nz(index.email).isNotEmpty ? index.email.trim() : employeeEmail,
+      employeeEmailLower: nz(index.emailLower).isNotEmpty
+          ? index.emailLower.trim().toLowerCase()
+          : employeeEmailLower,
+      firstName: opt(index.firstName),
+      lastName: opt(index.lastName),
+      displayName: opt(index.displayName),
+      companyName: companyName,
+      companySlug: companySlug,
+      addedAt: addedAt,
+      groupIds: groupIds,
+    );
   }
 
   factory TrackedEmployee.fromDoc(String id, Map<String, dynamic> data) {

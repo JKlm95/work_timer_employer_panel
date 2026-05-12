@@ -61,9 +61,16 @@ class FirestoreService {
     return snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList();
   }
 
+  /// Each emission re-reads `userEmailIndex/{employeeEmailLower}` so names stay in sync with mobile
+  /// without relying on workspace or stale `trackedEmployees` copies (see [TrackedEmployee.mergedWithUserEmailIndex]).
   Stream<List<TrackedEmployee>> trackedEmployeesStream(String employerUid) {
-    return _employerTracked(employerUid).snapshots().map((s) {
-      final list = s.docs.map((d) => TrackedEmployee.fromDoc(d.id, d.data())).toList();
+    return _employerTracked(employerUid).snapshots().asyncMap((s) async {
+      final list = <TrackedEmployee>[];
+      for (final d in s.docs) {
+        final base = TrackedEmployee.fromDoc(d.id, d.data());
+        final idx = await getUserEmailIndex(base.employeeEmailLower);
+        list.add(base.mergedWithUserEmailIndex(idx));
+      }
       list.sort((a, b) {
         final ad = a.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
         final bd = b.addedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -141,47 +148,41 @@ class FirestoreService {
     return m;
   }
 
-  Map<String, dynamic> _mergeNameFieldsIfMissing(Map<String, dynamic> existing, UserEmailIndex index) {
-    final patch = <String, dynamic>{};
-    bool missing(String k) {
-      final s = existing[k];
-      if (s == null) return true;
-      if (s is String && s.trim().isEmpty) return true;
-      return false;
-    }
-
-    void fill(String key, String? fromIndex) {
-      final v = fromIndex?.trim();
-      if (v == null || v.isEmpty) return;
-      if (missing(key)) patch[key] = v;
-    }
-
-    fill('firstName', index.firstName);
-    fill('lastName', index.lastName);
-    fill('displayName', index.displayName);
-    return patch;
+  /// Identity + name fields stored on `trackedEmployees` — all sourced from [UserEmailIndex].
+  Map<String, dynamic> _personalEmployeeWriteMap(
+    UserEmailIndex index, {
+    required String employeeEmailFallback,
+    required String emailLowerFallback,
+  }) {
+    return {
+      'employeeUid': index.uid.trim(),
+      'employeeEmail': index.email.trim().isNotEmpty ? index.email.trim() : employeeEmailFallback,
+      'employeeEmailLower': index.emailLower.trim().isNotEmpty
+          ? index.emailLower.trim().toLowerCase()
+          : emailLowerFallback,
+      ..._nameFieldsFromIndex(index),
+    };
   }
 
-  Map<String, dynamic> _overwriteNameFieldsFromIndexWhereProvided(
-    Map<String, dynamic> existing,
-    UserEmailIndex index,
-  ) {
+  Map<String, dynamic> _personalEmployeePatchFromIndex(UserEmailIndex index, Map<String, dynamic> existing) {
+    final desired = _personalEmployeeWriteMap(
+      index,
+      employeeEmailFallback: (existing['employeeEmail'] as String?)?.trim() ?? '',
+      emailLowerFallback: (existing['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '',
+    );
     final patch = <String, dynamic>{};
-    void consider(String key, String? fromIndex) {
-      final v = fromIndex?.trim();
-      if (v == null || v.isEmpty) return;
+    for (final e in desired.entries) {
+      final key = e.key;
+      final v = e.value;
       final cur = existing[key];
-      final curStr = cur is String ? cur.trim() : '';
-      if (curStr != v) patch[key] = v;
+      final curNorm = cur == null ? '' : cur is String ? cur.trim() : cur.toString();
+      final newNorm = v is String ? v.trim() : v.toString();
+      if (curNorm != newNorm) patch[key] = v;
     }
-
-    consider('firstName', index.firstName);
-    consider('lastName', index.lastName);
-    consider('displayName', index.displayName);
     return patch;
   }
 
-  /// Pulls latest name fields from `userEmailIndex` into one `trackedEmployees` doc (when index has data).
+  /// Pulls latest personal fields from `userEmailIndex` into one `trackedEmployees` doc.
   Future<bool> syncTrackedEmployeeProfileFromIndex(String employerUid, String trackedDocId) async {
     final ref = _employerTracked(employerUid).doc(trackedDocId);
     final d = await ref.get();
@@ -190,7 +191,7 @@ class FirestoreService {
     if (emailLower == null || emailLower.isEmpty) return false;
     final idx = await getUserEmailIndex(emailLower);
     if (idx == null) return false;
-    final patch = _overwriteNameFieldsFromIndexWhereProvided(d.data()!, idx);
+    final patch = _personalEmployeePatchFromIndex(idx, d.data()!);
     if (patch.isEmpty) return false;
     await ref.update(patch);
     return true;
@@ -205,7 +206,7 @@ class FirestoreService {
       if (emailLower == null || emailLower.isEmpty) continue;
       final idx = await getUserEmailIndex(emailLower);
       if (idx == null) continue;
-      final patch = _overwriteNameFieldsFromIndexWhereProvided(d.data(), idx);
+      final patch = _personalEmployeePatchFromIndex(idx, d.data());
       if (patch.isEmpty) continue;
       await d.reference.update(patch);
       n++;
@@ -298,7 +299,8 @@ class FirestoreService {
     });
   }
 
-  /// Validates domain + workspace match, then writes `trackedEmployees` doc.
+  /// Validates domain + workspace match (company/slug only — not names), then writes `trackedEmployees`.
+  /// Personal fields on the new doc come only from [getUserEmailIndex].
   Future<void> linkEmployee({
     required String employerUid,
     required String employerEmail,
@@ -352,19 +354,15 @@ class FirestoreService {
 
     if (existing.docs.isNotEmpty) {
       final doc = existing.docs.first;
-      final mergePatch = _mergeNameFieldsIfMissing(doc.data(), index);
-      if (mergePatch.isNotEmpty) {
-        await doc.reference.update(mergePatch);
+      final patch = _personalEmployeePatchFromIndex(index, doc.data());
+      if (patch.isNotEmpty) {
+        await doc.reference.update(patch);
       }
       throw EmployerLinkException('This employee is already on your list for this company.');
     }
 
-    final nameFields = _nameFieldsFromIndex(index);
     await _employerTracked(employerUid).add({
-      'employeeUid': index.uid,
-      'employeeEmail': employeeWorkEmailInput.trim(),
-      'employeeEmailLower': employeeEmailLower,
-      ...nameFields,
+      ..._personalEmployeeWriteMap(index, employeeEmailFallback: employeeWorkEmailInput.trim(), emailLowerFallback: employeeEmailLower),
       'companyName': matched.companyName ?? companyNameInput.trim(),
       'companySlug': normalizedSlug,
       'addedAt': FieldValue.serverTimestamp(),

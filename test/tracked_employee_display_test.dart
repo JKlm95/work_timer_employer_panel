@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:work_timer_employer_panel/core/utils/employee_name_utils.dart';
 import 'package:work_timer_employer_panel/models/tracked_employee.dart';
+import 'package:work_timer_employer_panel/models/user_email_index.dart';
 
 TrackedEmployee _employee({
   String email = 'a@b.c',
@@ -51,6 +52,37 @@ void main() {
         ),
         true,
       );
+    });
+  });
+
+  group('TrackedEmployee.mergedWithUserEmailIndex', () {
+    test('replaces cached names with index-only values', () {
+      final stale = _employee(
+        email: 'old@x.com',
+        firstName: 'Stale',
+        lastName: 'Name',
+        displayName: 'Stale Display',
+      );
+      final index = UserEmailIndex(
+        uid: 'u2',
+        email: 'user@example.com',
+        emailLower: 'user@example.com',
+        firstName: 'Jan',
+        lastName: 'Kowalski',
+        displayName: 'Jan Kowalski',
+      );
+      final m = stale.mergedWithUserEmailIndex(index);
+      expect(m.firstName, 'Jan');
+      expect(m.lastName, 'Kowalski');
+      expect(m.displayName, 'Jan Kowalski');
+      expect(m.employeeEmail, 'user@example.com');
+      expect(m.employeeUid, 'u2');
+      expect(m.fullName, 'Jan Kowalski');
+    });
+
+    test('returns this when index is null', () {
+      final t = _employee(firstName: 'Only');
+      expect(identical(t.mergedWithUserEmailIndex(null), t), true);
     });
   });
 }

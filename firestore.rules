@@ -21,8 +21,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Employers resolve employees by work email; reads must match deployed client (getUserEmailIndex).
+    // TODO: tighten (e.g. same email domain as auth token) before production.
     match /userEmailIndex/{email} {
-      allow read: if false;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
