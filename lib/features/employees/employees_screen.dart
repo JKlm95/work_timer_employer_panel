@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/report_period.dart';
+import '../../core/widgets/work_status_badge.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
 import '../../services/firestore_service.dart';
@@ -62,12 +64,31 @@ class EmployeesScreen extends StatelessWidget {
                                 child: Center(
                                   child: Padding(
                                     padding: const EdgeInsets.all(32),
-                                    child: Text(
-                                      'No employees yet. Add an employee by work email and company name.',
-                                      textAlign: TextAlign.center,
-                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'No employees tracked yet.',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Add an employee by work email and company name.',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 24),
+                                        FilledButton.icon(
+                                          onPressed: () => showAddEmployeeDialog(context, firestore),
+                                          icon: const Icon(Icons.person_add_alt_1_outlined),
+                                          label: const Text('Add employee'),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -133,10 +154,11 @@ class _EmployeesTableState extends State<_EmployeesTable> {
         final loading = snap.connectionState == ConnectionState.waiting;
         return DataTable(
           headingRowHeight: 48,
-          dataRowMinHeight: 48,
-          dataRowMaxHeight: 72,
+          dataRowMinHeight: 52,
+          dataRowMaxHeight: 88,
           columns: const [
             DataColumn(label: Text('Employee')),
+            DataColumn(label: Text('Status')),
             DataColumn(label: Text('Company')),
             DataColumn(label: Text('Groups')),
             DataColumn(label: Text('Hours (month)')),
@@ -147,7 +169,61 @@ class _EmployeesTableState extends State<_EmployeesTable> {
             for (final t in widget.tracked)
               DataRow(
                 cells: [
-                  DataCell(Text(t.displayName ?? t.employeeEmail)),
+                  DataCell(
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                          child: Text(
+                            employeeInitials(t),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                employeeFullName(t),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              if (employeeLastName(t).isNotEmpty)
+                                Text(
+                                  '${employeeFirstName(t)} · ${employeeLastName(t)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              Text(
+                                t.employeeEmail,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    StreamBuilder<bool>(
+                      stream: widget.firestore.hasOpenTimerStream(t.employeeUid),
+                      builder: (context, st) {
+                        return WorkStatusBadge(isWorking: st.data ?? false, compact: true);
+                      },
+                    ),
+                  ),
                   DataCell(Text(t.companyName)),
                   DataCell(Text(_groupLabels(t, widget.groups))),
                   DataCell(Text(loading ? '…' : (month[t.id]?.hours.toStringAsFixed(1) ?? '0'))),
@@ -181,7 +257,8 @@ class _EmployeesTableState extends State<_EmployeesTable> {
                               builder: (c) => AlertDialog(
                                 title: const Text('Remove employee'),
                                 content: const Text(
-                                  'Remove this employee from your tracked list? Their data in Firebase is not deleted.',
+                                  'Remove employee from employer panel? '
+                                  'This only removes them from your list — their account, projects and time entries are not deleted.',
                                 ),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),

@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/report_period.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
@@ -136,7 +138,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             items: [
                               const DropdownMenuItem<String?>(value: null, child: Text('All employees')),
                               for (final t in trackedAll)
-                                DropdownMenuItem(value: t.id, child: Text(t.displayName ?? t.employeeEmail)),
+                                DropdownMenuItem(value: t.id, child: Text(employeeFullName(t))),
                             ],
                             onChanged: (v) => setState(() => _trackedId = v),
                           ),
@@ -165,10 +167,25 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             : tracked.isEmpty
                             ? Card(
                                 child: Center(
-                                  child: Text(
-                                    'No report data for selected period.',
-                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'No payroll data for selected period.',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        OutlinedButton.icon(
+                                          onPressed: () => context.go('/employees'),
+                                          icon: const Icon(Icons.people_outline),
+                                          label: const Text('Go to Employees'),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -198,6 +215,8 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                             vacationCount: line.vacationCount,
                                             sickCount: line.sickCount,
                                             amountByCurrency: m,
+                                            amountDisplay: _payrollAmountDisplay(m, _currency),
+                                            currencyDisplay: _payrollCurrencyDisplay(m, _currency),
                                           );
                                         })
                                         .toList();
@@ -207,20 +226,67 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
+                                      LayoutBuilder(
+                                        builder: (context, c) {
+                                          final w = c.maxWidth;
+                                          final cardW = w > 900 ? (w - 48) / 4 : (w > 500 ? (w - 16) / 2 : w);
+                                          Widget card(String title, String value) {
+                                            return SizedBox(
+                                              width: cardW,
+                                              child: Card(
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(14),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        title,
+                                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      Text(
+                                                        value,
+                                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                          fontWeight: FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }
+
+                                          return Wrap(
+                                            spacing: 12,
+                                            runSpacing: 12,
+                                            children: [
+                                              card('Tracked employees', '${lines.length}'),
+                                              card('Total hours', bundle.totalHours.toStringAsFixed(2)),
+                                              card('Billable hours', bundle.totalBillableHours.toStringAsFixed(2)),
+                                              card('Estimated (billable)', _money(bundle.grandTotals)),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(height: 12),
                                       Card(
                                         child: SingleChildScrollView(
                                           scrollDirection: Axis.horizontal,
                                           child: DataTable(
+                                            headingRowHeight: 48,
+                                            dataRowMinHeight: 48,
+                                            dataRowMaxHeight: 72,
                                             columns: const [
                                               DataColumn(label: Text('Employee')),
                                               DataColumn(label: Text('Company')),
-                                              DataColumn(label: Text('Groups')),
                                               DataColumn(label: Text('Total h')),
                                               DataColumn(label: Text('Billable h')),
                                               DataColumn(label: Text('Non-bill. h')),
-                                              DataColumn(label: Text('Vacation')),
-                                              DataColumn(label: Text('Sick')),
-                                              DataColumn(label: Text('Amount')),
+                                              DataColumn(label: Text('Estimated')),
+                                              DataColumn(label: Text('Currency')),
                                             ],
                                             rows: [
                                               for (final line in lines)
@@ -228,13 +294,11 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                                   cells: [
                                                     DataCell(Text(line.employeeLabel)),
                                                     DataCell(Text(line.companyName)),
-                                                    DataCell(Text(line.groupLabels)),
                                                     DataCell(Text(line.totalHours.toStringAsFixed(2))),
                                                     DataCell(Text(line.billableHours.toStringAsFixed(2))),
                                                     DataCell(Text(line.nonBillableHours.toStringAsFixed(2))),
-                                                    DataCell(Text('${line.vacationCount}')),
-                                                    DataCell(Text('${line.sickCount}')),
-                                                    DataCell(Text(_money(line.amountByCurrency))),
+                                                    DataCell(Text(line.amountDisplay)),
+                                                    DataCell(Text(line.currencyDisplay)),
                                                   ],
                                                 ),
                                             ],
@@ -255,10 +319,6 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                                 ),
                                               ),
                                               const SizedBox(height: 8),
-                                              Text('Employees: ${lines.length}'),
-                                              Text(
-                                                'Total hours: ${bundle.totalHours.toStringAsFixed(2)}',
-                                              ),
                                               Text('Totals by currency: ${_money(bundle.grandTotals)}'),
                                             ],
                                           ),
@@ -284,6 +344,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
     final lines = <PayrollLine>[];
     var grandTotals = <String, double>{};
     var totalHoursAll = 0.0;
+    var totalBillableAll = 0.0;
 
     final groupsSnap = await widget.firestore.groupsStream(FirebaseAuth.instance.currentUser!.uid).first;
     final groupName = {for (final g in groupsSnap) g.id: g.name};
@@ -307,6 +368,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
       final totalRowHours = _sumHours(active);
       totalHoursAll += totalRowHours;
+      totalBillableAll += split.billableWorkHours;
 
       final money = _calc.estimatedAmountByCurrency(
         entries: active.where((e) => e.isWorkEntry).toList(),
@@ -319,7 +381,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
       lines.add(
         PayrollLine(
           trackedId: t.id,
-          employeeLabel: t.displayName ?? t.employeeEmail,
+          employeeLabel: employeeFullName(t),
           companyName: t.companyName,
           groupLabels: groupLabels.isEmpty ? '—' : groupLabels,
           totalHours: totalRowHours,
@@ -328,11 +390,32 @@ class _PayrollScreenState extends State<PayrollScreen> {
           vacationCount: split.vacationEntries,
           sickCount: split.sickEntries,
           amountByCurrency: money,
+          amountDisplay: _payrollAmountDisplay(money, _currency),
+          currencyDisplay: _payrollCurrencyDisplay(money, _currency),
         ),
       );
     }
 
-    return _PayrollBundle(lines: lines, grandTotals: grandTotals, totalHours: totalHoursAll);
+    return _PayrollBundle(
+      lines: lines,
+      grandTotals: grandTotals,
+      totalHours: totalHoursAll,
+      totalBillableHours: totalBillableAll,
+    );
+  }
+
+  String _payrollAmountDisplay(Map<String, double> m, String filter) {
+    if (m.isEmpty) return '—';
+    if (filter == 'all') return _money(m);
+    final v = m[filter];
+    return v != null && v > 0 ? v.toStringAsFixed(2) : '—';
+  }
+
+  String _payrollCurrencyDisplay(Map<String, double> m, String filter) {
+    if (m.isEmpty) return '—';
+    if (filter != 'all') return filter;
+    if (m.length == 1) return m.keys.first;
+    return 'Various';
   }
 
   static String _money(Map<String, double> m) {
@@ -355,9 +438,11 @@ class _PayrollBundle {
     required this.lines,
     required this.grandTotals,
     required this.totalHours,
+    required this.totalBillableHours,
   });
 
   final List<PayrollLine> lines;
   final Map<String, double> grandTotals;
   final double totalHours;
+  final double totalBillableHours;
 }

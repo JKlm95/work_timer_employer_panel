@@ -65,12 +65,10 @@ class ExportService {
         'Total hours',
         'Billable hours',
         'Non-billable hours',
+        'Estimated amount',
+        'Currency',
         'Vacation entries',
         'Sick entries',
-        'Amount PLN',
-        'Amount EUR',
-        'Amount USD',
-        'Amount GBP',
       ],
     ];
     for (final line in lines) {
@@ -81,20 +79,13 @@ class ExportService {
         line.totalHours.toStringAsFixed(2),
         line.billableHours.toStringAsFixed(2),
         line.nonBillableHours.toStringAsFixed(2),
+        line.amountDisplay,
+        line.currencyDisplay,
         '${line.vacationCount}',
         '${line.sickCount}',
-        _money(line.amountByCurrency['PLN']),
-        _money(line.amountByCurrency['EUR']),
-        _money(line.amountByCurrency['USD']),
-        _money(line.amountByCurrency['GBP']),
       ]);
     }
     downloadTextFile(filename, _toCsv(rows), mimeType: 'text/csv;charset=utf-8');
-  }
-
-  static String _money(double? v) {
-    if (v == null || v == 0) return '';
-    return v.toStringAsFixed(2);
   }
 
   static String _date(DateTime d) =>

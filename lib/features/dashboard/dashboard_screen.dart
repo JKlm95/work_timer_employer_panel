@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/report_period.dart';
+import '../../core/widgets/work_status_badge.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
 import '../../services/firestore_service.dart';
@@ -23,7 +25,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _calc = ReportCalculationService();
 
-  Future<_MonthStats>? _statsFuture;
+  Future<_DashboardSnapshot>? _statsFuture;
   String _trackedSig = '';
 
   ReportPeriod get _thisMonth => monthContaining(DateTime.now());
@@ -32,13 +34,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final sig = tracked.map((t) => t.id).join('|');
     if (sig == _trackedSig && _statsFuture != null) return;
     _trackedSig = sig;
-    _statsFuture = _loadMonthStats(tracked);
+    _statsFuture = _loadDashboardSnapshot(tracked);
   }
 
-  Future<_MonthStats> _loadMonthStats(List<TrackedEmployee> tracked) async {
+  Future<_DashboardSnapshot> _loadDashboardSnapshot(List<TrackedEmployee> tracked) async {
     final period = _thisMonth;
     double totalHours = 0;
     final amountByCurrency = <String, double>{};
+    final lastByTracked = <String, DateTime?>{};
+    var workingCount = 0;
+
+    final workingFlags = await Future.wait(tracked.map((t) => widget.firestore.hasOpenTimer(t.employeeUid)));
+    for (var i = 0; i < tracked.length; i++) {
+      if (workingFlags[i]) workingCount++;
+    }
+
+    final lastTimes = await Future.wait(tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid)));
+    for (var i = 0; i < tracked.length; i++) {
+      lastByTracked[tracked[i].id] = lastTimes[i];
+    }
+
     for (final t in tracked) {
       final entries = await widget.firestore.fetchEntriesInRange(t.employeeUid, period);
       final workspaces = await widget.firestore.fetchEmployeeWorkspaces(t.employeeUid);
@@ -57,7 +72,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
       money.forEach((k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v);
     }
-    return _MonthStats(totalHours: totalHours, amountByCurrency: amountByCurrency);
+
+    return _DashboardSnapshot(
+      totalHours: totalHours,
+      amountByCurrency: amountByCurrency,
+      workingCount: workingCount,
+      lastActivityByTrackedId: lastByTracked,
+    );
   }
 
   @override
@@ -82,7 +103,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             _ensureStats(tracked);
 
-            final statsFuture = _statsFuture ?? Future.value(const _MonthStats(totalHours: 0, amountByCurrency: {}));
+            final statsFuture = _statsFuture ??
+                Future.value(
+                  _DashboardSnapshot(
+                    totalHours: 0,
+                    amountByCurrency: {},
+                    workingCount: 0,
+                    lastActivityByTrackedId: {},
+                  ),
+                );
 
             return SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -105,15 +134,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      FutureBuilder<_MonthStats>(
+                      FutureBuilder<_DashboardSnapshot>(
                         future: statsFuture,
                         builder: (context, snap) {
                           final loading = snap.connectionState == ConnectionState.waiting;
-                          final stats = snap.data ?? const _MonthStats(totalHours: 0, amountByCurrency: {});
+                          final stats = snap.data ??
+                              _DashboardSnapshot(
+                                totalHours: 0,
+                                amountByCurrency: {},
+                                workingCount: 0,
+                                lastActivityByTrackedId: {},
+                              );
                           return LayoutBuilder(
                             builder: (context, constraints) {
                               final w = constraints.maxWidth;
-                              final cols = w > 1100 ? 4 : (w > 700 ? 2 : 1);
                               final cards = [
                                 _SummaryCard(
                                   title: 'Tracked employees',
@@ -122,10 +156,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   loading: false,
                                 ),
                                 _SummaryCard(
-                                  title: 'Groups',
+                                  title: 'Active groups',
                                   value: '$groupsCount',
                                   icon: Icons.folder_special_outlined,
                                   loading: false,
+                                ),
+                                _SummaryCard(
+                                  title: 'Working now',
+                                  value: loading ? '…' : '${stats.workingCount}',
+                                  icon: Icons.play_circle_outline,
+                                  loading: loading,
                                 ),
                                 _SummaryCard(
                                   title: 'Hours this month',
@@ -141,15 +181,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   denseValue: true,
                                 ),
                               ];
+                              final cols = w > 1100 ? 3 : (w > 520 ? 2 : 1);
                               return Wrap(
                                 spacing: 16,
                                 runSpacing: 16,
                                 children: [
                                   for (var i = 0; i < cards.length; i++)
                                     SizedBox(
-                                      width: cols == 1
-                                          ? w
-                                          : (w - (cols - 1) * 16) / cols,
+                                      width: cols == 1 ? w : (w - (cols - 1) * 16) / cols,
                                       child: cards[i],
                                     ),
                                 ],
@@ -177,6 +216,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             icon: const Icon(Icons.create_new_folder_outlined),
                             label: const Text('Create group'),
                           ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: () => context.go('/payroll'),
+                            icon: const Icon(Icons.payments_outlined),
+                            label: const Text('Payroll report'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -184,35 +229,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: tracked.isEmpty
                             ? Padding(
                                 padding: const EdgeInsets.all(32),
-                                child: Center(
-                                  child: Text(
-                                    'No employees tracked yet. Add your first employee to start viewing reports.',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      'No employees tracked yet.',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Add your first employee to start viewing reports.',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    FilledButton.icon(
+                                      onPressed: () => showAddEmployeeDialog(context, widget.firestore),
+                                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                                      label: const Text('Add employee'),
+                                    ),
+                                  ],
                                 ),
                               )
-                            : ListView.separated(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: tracked.length.clamp(0, 5),
-                                separatorBuilder: (context, _) => const Divider(height: 1),
-                                itemBuilder: (context, i) {
-                                  final e = tracked[i];
-                                  return ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                      child: Text(_initial(e.displayName ?? e.employeeEmail)),
-                                    ),
-                                    title: Text(e.displayName ?? e.employeeEmail),
-                                    subtitle: Text(e.companyName),
-                                    trailing: Text(
-                                      DateFormat.yMMMd().format(e.addedAt ?? DateTime.now()),
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                    onTap: () => context.go('/employees/detail/${e.id}'),
+                            : FutureBuilder<_DashboardSnapshot>(
+                                future: statsFuture,
+                                builder: (context, snap) {
+                                  final st = snap.data;
+                                  return ListView.separated(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: tracked.length.clamp(0, 5),
+                                    separatorBuilder: (context, _) => const Divider(height: 1),
+                                    itemBuilder: (context, i) {
+                                      final e = tracked[i];
+                                      final last = st?.lastActivityByTrackedId[e.id];
+                                      final lastText = last == null
+                                          ? 'Last activity: —'
+                                          : 'Last activity: ${DateFormat.yMMMd().add_jm().format(last)}';
+                                      return ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        leading: CircleAvatar(
+                                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                          child: Text(employeeInitials(e)),
+                                        ),
+                                        title: Text(employeeFullName(e)),
+                                        subtitle: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(e.employeeEmail, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                            Text(e.companyName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              lastText,
+                                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        trailing: StreamBuilder<bool>(
+                                          stream: widget.firestore.hasOpenTimerStream(e.employeeUid),
+                                          builder: (context, wSnap) {
+                                            return WorkStatusBadge(
+                                              isWorking: wSnap.data ?? false,
+                                              compact: true,
+                                            );
+                                          },
+                                        ),
+                                        onTap: () => context.go('/employees/detail/${e.id}'),
+                                      );
+                                    },
                                   );
                                 },
                               ),
@@ -228,23 +318,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  static String _initial(String s) {
-    final t = s.trim();
-    if (t.isEmpty) return '?';
-    return t[0].toUpperCase();
-  }
-
   static String _formatMoney(Map<String, double> m) {
     if (m.isEmpty) return '—';
     return m.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
   }
 }
 
-class _MonthStats {
-  const _MonthStats({required this.totalHours, required this.amountByCurrency});
+class _DashboardSnapshot {
+  _DashboardSnapshot({
+    required this.totalHours,
+    required this.amountByCurrency,
+    required this.workingCount,
+    required this.lastActivityByTrackedId,
+  });
 
   final double totalHours;
   final Map<String, double> amountByCurrency;
+  final int workingCount;
+  final Map<String, DateTime?> lastActivityByTrackedId;
 }
 
 class _SummaryCard extends StatelessWidget {

@@ -11,6 +11,10 @@ import '../models/workspace.dart';
 
 /// Firestore access for the employer panel.
 ///
+/// **MVP writes:** The only mutations allowed on employee-owned data from this panel are
+/// [updateWorkspaceBilling] (`hourlyRate`, `currency` on `users/{uid}/workspaces/{id}`).
+/// Tracked employees and groups live under `employers/{employerUid}/…`.
+///
 /// **Security:** Reads under `users/{uid}/...` assume Firestore rules eventually allow
 /// constrained access (e.g. only after employer–employee relationship exists). Do **not**
 /// ship production rules that expose all user documents. Functions or strict rules are
@@ -126,6 +130,91 @@ class FirestoreService {
     await _employerTracked(employerUid).doc(trackedId).delete();
   }
 
+  /// **TODO (mobile):** If the app always writes `end` on entries, this stream never fires — add
+  /// `liveStatus` (or equivalent) later. Until then, "Working" = at least one non-deleted entry
+  /// with `end == null`.
+  Stream<bool> hasOpenTimerStream(String employeeUid) {
+    return _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('entries')
+        .where('isDeleted', isEqualTo: false)
+        .where('end', isNull: true)
+        .limit(1)
+        .snapshots()
+        .map((s) => s.docs.isNotEmpty);
+  }
+
+  /// One-shot check (e.g. dashboard aggregates). See [hasOpenTimerStream] for TODO on mobile `end`.
+  Future<bool> hasOpenTimer(String employeeUid) async {
+    final q = await _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('entries')
+        .where('isDeleted', isEqualTo: false)
+        .where('end', isNull: true)
+        .limit(1)
+        .get();
+    return q.docs.isNotEmpty;
+  }
+
+  /// Prefer `updatedAt`, fallback `start`, on newest non-deleted entry.
+  Future<DateTime?> fetchLastActivityAt(String employeeUid) async {
+    try {
+      final snap = await _db
+          .collection('users')
+          .doc(employeeUid)
+          .collection('entries')
+          .where('isDeleted', isEqualTo: false)
+          .orderBy('updatedAt', descending: true)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final e = WorkEntry.fromDoc(snap.docs.first.id, snap.docs.first.data());
+      return e.updatedAt ?? e.start;
+    } catch (_) {
+      final snap = await _db
+          .collection('users')
+          .doc(employeeUid)
+          .collection('entries')
+          .orderBy('start', descending: true)
+          .limit(40)
+          .get();
+      DateTime? best;
+      for (final d in snap.docs) {
+        final e = WorkEntry.fromDoc(d.id, d.data());
+        if (e.isDeleted) continue;
+        final ts = e.updatedAt ?? e.start;
+        if (best == null || ts.isAfter(best)) best = ts;
+      }
+      return best;
+    }
+  }
+
+  /// **MVP:** Employer may update billing fields on the employee workspace document.
+  /// **TODO (mobile):** Firestore is source of truth; ensure the mobile client merges server writes
+  /// instead of overwriting with stale local cache after employer edits.
+  Future<void> updateWorkspaceBilling({
+    required String employeeUid,
+    required String workspaceId,
+    required double hourlyRate,
+    required String currency,
+  }) async {
+    if (hourlyRate < 0 || hourlyRate > 99999) {
+      throw WorkspaceBillingException('Rate must be between 0 and 99,999.');
+    }
+    final c = currency.trim().toUpperCase();
+    const allowed = {'PLN', 'EUR', 'USD', 'GBP'};
+    if (!allowed.contains(c)) {
+      throw WorkspaceBillingException('Currency must be PLN, EUR, USD, or GBP.');
+    }
+    await _db.collection('users').doc(employeeUid).collection('workspaces').doc(workspaceId).update({
+      'hourlyRate': hourlyRate,
+      'currency': c,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Validates domain + workspace match, then writes `trackedEmployees` doc.
   Future<void> linkEmployee({
     required String employerUid,
@@ -197,6 +286,14 @@ class FirestoreService {
 
 class EmployerLinkException implements Exception {
   EmployerLinkException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class WorkspaceBillingException implements Exception {
+  WorkspaceBillingException(this.message);
   final String message;
 
   @override

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/employer_group.dart';
+import '../../models/tracked_employee.dart';
 import '../../services/firestore_service.dart';
 import 'widgets/create_group_dialog.dart';
 
@@ -47,73 +48,103 @@ class GroupsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: StreamBuilder<List<EmployerGroup>>(
-                  stream: firestore.groupsStream(uid),
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final groups = snap.data ?? [];
-                    if (groups.isEmpty) {
-                      return Card(
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Text(
-                              'No groups yet. Create groups to organize employees by project, team or department.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                child: StreamBuilder<List<TrackedEmployee>>(
+                  stream: firestore.trackedEmployeesStream(uid),
+                  builder: (context, trackedSnap) {
+                    final tracked = trackedSnap.data ?? [];
+                    return StreamBuilder<List<EmployerGroup>>(
+                      stream: firestore.groupsStream(uid),
+                      builder: (context, snap) {
+                        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        final groups = snap.data ?? [];
+                        if (groups.isEmpty) {
+                          return Card(
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'No groups created yet.',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Create groups to organize employees by project, team or department.',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    FilledButton.icon(
+                                      onPressed: () => showCreateGroupDialog(context, firestore),
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Create group'),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      );
-                    }
-                    return ListView.separated(
-                      itemCount: groups.length,
-                      separatorBuilder: (context, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, i) {
-                        final g = groups[i];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: _hex(g.colorHex),
-                              child: const SizedBox.shrink(),
-                            ),
-                            title: Text(g.name),
-                            subtitle: Text(g.colorHex),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined),
-                                  onPressed: () => _edit(context, uid, g),
+                          );
+                        }
+                        return ListView.separated(
+                          itemCount: groups.length,
+                          separatorBuilder: (context, _) => const SizedBox(height: 10),
+                          itemBuilder: (context, i) {
+                            final g = groups[i];
+                            final count = tracked.where((t) => t.groupIds.contains(g.id)).length;
+                            return Card(
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: _hex(g.colorHex),
+                                  child: const SizedBox.shrink(),
                                 ),
-                                IconButton(
-                                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                                  onPressed: () async {
-                                    final ok = await showDialog<bool>(
-                                      context: context,
-                                      builder: (c) => AlertDialog(
-                                        title: const Text('Delete group'),
-                                        content: const Text(
-                                          'Employees will be unassigned from this group.',
-                                        ),
-                                        actions: [
-                                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                                          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
-                                        ],
-                                      ),
-                                    );
-                                    if (ok == true && context.mounted) {
-                                      await firestore.deleteGroup(uid, g.id);
-                                    }
-                                  },
+                                title: Text(g.name),
+                                subtitle: Text(
+                                  '$count ${count == 1 ? 'employee' : 'employees'} · ${g.colorHex}',
                                 ),
-                              ],
-                            ),
-                          ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Rename',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: () => _edit(context, uid, g),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Delete',
+                                      icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                                      onPressed: () async {
+                                        final ok = await showDialog<bool>(
+                                          context: context,
+                                          builder: (c) => AlertDialog(
+                                            title: const Text('Delete group'),
+                                            content: const Text(
+                                              'Employees will be unassigned from this group.',
+                                            ),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
+                                            ],
+                                          ),
+                                        );
+                                        if (ok == true && context.mounted) {
+                                          await firestore.deleteGroup(uid, g.id);
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     );
@@ -143,7 +174,7 @@ class GroupsScreen extends StatelessWidget {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Edit group'),
+        title: const Text('Rename group'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

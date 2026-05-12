@@ -158,6 +158,8 @@ class PayrollLine extends Equatable {
     required this.vacationCount,
     required this.sickCount,
     required this.amountByCurrency,
+    required this.amountDisplay,
+    required this.currencyDisplay,
   });
 
   final String trackedId;
@@ -170,6 +172,8 @@ class PayrollLine extends Equatable {
   final int vacationCount;
   final int sickCount;
   final Map<String, double> amountByCurrency;
+  final String amountDisplay;
+  final String currencyDisplay;
 
   @override
   List<Object?> get props => [trackedId];

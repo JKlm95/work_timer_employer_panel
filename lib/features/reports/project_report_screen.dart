@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import '../../core/utils/report_period.dart';
 import '../../models/tracked_employee.dart';
 import '../../models/work_entry.dart';
-import '../../models/workspace.dart';
+import '../../models/workspace.dart' as ws;
+import '../employees/widgets/edit_workspace_billing_dialog.dart';
 import '../../services/export_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/report_calculation_service.dart';
@@ -29,6 +30,9 @@ class ProjectReportScreen extends StatefulWidget {
 class _ProjectReportScreenState extends State<ProjectReportScreen> {
   final _calc = ReportCalculationService();
   final _export = ExportService();
+
+  /// Bumps after editing workspace billing so rates reload from Firestore.
+  int _workspaceReloadKey = 0;
 
   DateRangePreset _preset = DateRangePreset.thisMonth;
   DateTimeRange? _custom;
@@ -89,24 +93,25 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
 
         final TrackedEmployee te = tracked;
 
-        return FutureBuilder<List<Workspace>>(
+        return FutureBuilder<List<ws.Workspace>>(
+          key: ValueKey('${te.employeeUid}_${widget.workspaceId}_$_workspaceReloadKey'),
           future: widget.firestore.fetchEmployeeWorkspaces(te.employeeUid),
           builder: (context, wsSnap) {
             if (!wsSnap.hasData) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
-            Workspace? ws;
+            ws.Workspace? selectedWs;
             for (final w in wsSnap.data!) {
-              if (w.id == widget.workspaceId) ws = w;
+              if (w.id == widget.workspaceId) selectedWs = w;
             }
-            if (ws == null) {
+            if (selectedWs == null) {
               return Scaffold(
                 appBar: AppBar(title: const Text('Report')),
                 body: const Center(child: Text('Project not found.')),
               );
             }
 
-            final workspace = ws;
+            final workspace = selectedWs;
             final period = _period();
 
             return FutureBuilder<List<WorkEntry>>(
@@ -138,6 +143,19 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                   appBar: AppBar(
                     title: Text(workspace.name),
                     actions: [
+                      IconButton(
+                        tooltip: 'Edit hourly rate / currency',
+                        onPressed: () async {
+                          await showEditWorkspaceBillingDialog(
+                            context,
+                            firestore: widget.firestore,
+                            employeeUid: te.employeeUid,
+                            workspace: workspace,
+                          );
+                          if (mounted) setState(() => _workspaceReloadKey++);
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
                       IconButton(
                         tooltip: 'Export CSV (PDF export — TODO)',
                         onPressed: () {
@@ -303,7 +321,7 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
     return '${h.toStringAsFixed(2)} h';
   }
 
-  String _amountCell(WorkEntry e, Workspace ws) {
+  String _amountCell(WorkEntry e, ws.Workspace ws) {
     if (!e.isWorkEntry) return '—';
     if (_billableOnly && !e.effectiveBillable) return '—';
     final rate = ws.hourlyRate;

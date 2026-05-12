@@ -6,87 +6,93 @@
 |-----------|--------|
 | Flutter Web | UI, routing (`go_router`) |
 | Firebase Core / Auth | Inicjalizacja, logowanie pracodawcy |
-| Cloud Firestore | Odczyt danych pracowników + zapis danych panelu pracodawcy |
+| Cloud Firestore | Odczyt danych pracowników + zapis danych panelu pracodawcy + MVP: `hourlyRate` / `currency` na workspace |
+| `provider` | `ThemeController` przy korzeniu aplikacji (`ChangeNotifierProvider`) |
+| `shared_preferences` | Persystencja trybu motywu (light / dark / system) na Web |
 | Architektura | Feature folders (`lib/features/…`), serwisy (`lib/services/…`), modele (`lib/models/…`) |
 
-Stan nie jest zarządzany jednym globalnym frameworkiem — dominują **`StreamBuilder`** / **`FutureBuilder`** przy serwisie Firestore (świadome uproszczenie MVP).
+Stan ekranów nadal opiera się głównie na **`StreamBuilder`** / **`FutureBuilder`** + Firestore (MVP).
+
+## Motyw (jasny / ciemny)
+
+- **`lib/core/theme/app_theme.dart`** — `buildLightTheme()` i `buildDarkTheme()`: Material 3, wspólna estetyka SaaS (indygo + slate), karty, rail, tabele, pola formularzy.
+- **`lib/core/theme/theme_controller.dart`** — `ThemeMode`, zapis do `SharedPreferences` pod kluczem `theme_mode`.
+- **`lib/app.dart`** — `MaterialApp.router` z `theme`, `darkTheme`, `themeMode` z `ThemeController`.
+- **`lib/main.dart`** — `await themeController.load()` przed `runApp`; `ChangeNotifierProvider.value` owija `WorkTimerEmployerApp`.
+- **Ustawienia** — `SegmentedButton<ThemeMode>` (System / Light / Dark).
 
 ## Struktura katalogów `lib/`
 
 ```
 lib/
-  main.dart              # Firebase.initializeApp + router
-  app.dart               # MaterialApp.router + theme
+  main.dart              # Firebase + ThemeController.load + Provider root
+  app.dart               # MaterialApp.router + theme / darkTheme / themeMode
   firebase_options.dart  # flutterfire configure (placeholdery domyślnie)
   core/
-    theme/               # Motyw SaaS (jasny)
-    utils/               # Domena emaila, slug firmy, okresy raportów
+    theme/               # app_theme.dart, theme_controller.dart
+    utils/               # Domena emaila, slug firmy, okresy raportów, nazwy pracowników
     export/              # Pobieranie plików na Web (conditional import)
-    widgets/             # (placeholder na wspólne widgety)
+    widgets/             # m.in. WorkStatusBadge
   models/                # Workspace, WorkEntry, TrackedEmployee, EmployerGroup, UserEmailIndex
   services/
     firebase_auth_service.dart
-    firestore_service.dart       # Zapytania + linkowanie pracownika
+    firestore_service.dart       # Zapytania, linkowanie, billing workspace, presence
     report_calculation_service.dart
     export_service.dart          # CSV (escape komórek)
   features/
     auth/ login_screen.dart
-    shell/ main_shell.dart       # Sidebar / drawer + top bar
+    shell/ main_shell.dart       # Sidebar / drawer + top bar (kolory ze scheme)
     dashboard/
     employees/
     groups/
     reports/                     # Raport projektu + payroll
-    settings/
+    settings/                    # Motyw + wylogowanie
   router/ app_router.dart        # GoRouter + ShellRoute + redirect auth
 ```
 
 ## Model danych Firestore (założenia)
 
-### Aplikacja mobilna (read-only dla panelu)
+### Aplikacja mobilna
 
-- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`
+- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`
 - `users/{employeeUid}/entries/{entryId}` — wpisy czasu; `isDeleted`, `entryType`, `isBillable`, `start`/`end`
 
 ### Indeks email → UID
 
-- `userEmailIndex/{emailLower}` → `{ uid, email, … }`
+- `userEmailIndex/{emailLower}` → `{ uid, email, displayName?, … }`
 
-**TODO (mobile):** Ten dokument musi być tworzony/aktualizowany po logowaniu — implementacja jest po stronie aplikacji mobilnej. Frontend panelu tylko **oczekuje** kolekcji.
+**TODO (mobile):** Indeks po logowaniu. Status „Working” na MVP: wpis z `end == null` i `isDeleted != true`; jeśli mobilka zawsze ustawia `end`, docelowo `liveStatus` (TODO w kodzie).
 
-### Dane pracodawcy (zapis przez panel)
+### Dane pracodawcy
 
 - `employers/{employerUid}/trackedEmployees/{id}`
 - `employers/{employerUid}/groups/{groupId}`
 
+### Dozwolone zapisy MVP w danych „pracownika”
+
+- Tylko **`updateWorkspaceBilling`** na `users/{uid}/workspaces/{id}` (`hourlyRate`, `currency`, `updatedAt`). Reszta danych pracownika — read-only z panelu.
+
 ## Logika dodawania pracownika (MVP)
 
 1. Normalizacja maila pracownika do lowercase.
-2. Normalizacja nazwy firmy do **slug** (`core/utils/company_slug_utils.dart`) — porównanie z `workspace.companySlug`.
+2. Normalizacja nazwy firmy do **slug** (`core/utils/company_slug_utils.dart`).
 3. Odczyt UID z `userEmailIndex`.
-4. Odczyt listy workspace’ów pracownika; wybór dopasowania:
-   - `employeeWorkEmail` (lower) == wpisany email
-   - `companySlug` == znormalizowany slug firmy
-   - `employeeWorkEmailDomain` == domena maila **zalogowanego pracodawcy**
-5. Zapis rekordu w `trackedEmployees` (bez modyfikacji danych pracownika).
-
-Komunikaty błędów są mapowane w `FirestoreService.linkEmployee` / `EmployerLinkException`.
+4. Dopasowanie workspace (email + slug + domena pracodawcy).
+5. Zapis w `trackedEmployees`.
 
 ## Obliczenia raportów (`ReportCalculationService`)
 
-- Czas trwania z różnicy `end - start`; pomijane `isDeleted == true` i brak `end`.
-- Typ wpisu **work** lub `null` traktowany jako praca (`WorkEntry.isWorkEntry`).
-- Kwoty szacowane: `godziny × hourlyRate` dla wpisów billable (`isBillable` domyślnie `true` jeśli brak pola).
-- Waluty **nie są konwertowane** — sumy per `PLN`, `EUR`, itd.
-- Urlopy / choroby / delegacje: w raportach pokazywane jako liczniki wpisów (`splitHours`), nie jako „dni kalendarzowe” ISO.
+- Czas z `end - start`; pomijane `isDeleted` i brak `end` (poza statusem „Working”).
+- Kwoty dla wpisów billable; waluty bez konwersji.
 
 ## Eksport CSV
 
-`ExportService` buduje CSV z ręcznym escapowaniem pól; pobranie pliku wyłącznie na **Web** (`lib/core/export/download_web.dart`). PDF — celowo **nie** zaimplementowany (TODO w tooltipach).
+`ExportService` + Web download. PDF — TODO w UI.
 
 ## Bezpieczeństwo
 
-- Kod komentuje miejsca **wrażliwe** (odczyt `users/{uid}/…`).
-- Plik `firestore.rules` jest **szkicem**: domyślnie **wyłącza** operacje (`allow read, write: if false`), żeby nie sugerować niebezpiecznej konfiguracji. Produkcja wymaga reguł ograniczających odczyt do powiązanych employer↔employee lub warstwy Cloud Functions.
+- Komentarze przy wrażliwych odczytach.
+- `firestore.rules` — szkic deny-all; produkcja: reguły lub Cloud Functions.
 
 ## Konfiguracja Firebase Web
 
@@ -94,8 +100,6 @@ Komunikaty błędów są mapowane w `FirestoreService.linkEmployee` / `EmployerL
 dart pub global activate flutterfire_cli
 flutterfire configure
 ```
-
-Nadpisze `lib/firebase_options.dart` prawdziwymi wartościami z projektu.
 
 ## Analiza i testy
 
@@ -106,6 +110,6 @@ flutter test
 
 ## Znane ograniczenia MVP
 
-- Brak Google Sign-In (możliwy jako rozszerzenie).
-- Zapytania Firestore po polu `start` zakładają indeksy kompozytowe — przy pierwszym uruchomieniu konsola Firebase może zaproponować link do utworzenia indeksu.
-- Duże org.: pobieranie wpisów w zakresie miesiąca per pracownik może wymagać paginacji lub funkcji backendowych.
+- Brak Google Sign-In (opcjonalnie później).
+- Indeksy Firestore pod zapytania z `orderBy` / `where` — konsola może zaproponować link.
+- Duże org.: paginacja / backend dla agregacji.

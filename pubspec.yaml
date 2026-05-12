@@ -1,5 +1,5 @@
 name: work_timer_employer_panel
-description: "Flutter Web employer panel for Work Timer — Firebase read-only reports, groups, CSV export."
+description: "Flutter Web employer panel for Work Timer — Firebase reports, groups, theme (light/dark), CSV export."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -41,6 +41,8 @@ dependencies:
   equatable: ^2.0.8
   intl: ^0.20.2
   go_router: ^17.2.3
+  shared_preferences: ^2.5.5
+  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:
