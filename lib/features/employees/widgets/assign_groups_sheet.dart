@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/employee_name_utils.dart';
 import '../../../models/employer_group.dart';
 import '../../../models/tracked_employee.dart';
 import '../../../services/firestore_service.dart';
@@ -35,11 +36,16 @@ Future<void> showAssignGroupsSheet(
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      tracked.displayName ?? tracked.employeeEmail,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                      employeeFullName(tracked),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
+                    if (employeeShowEmailAsSubtitle(tracked))
+                      Text(
+                        tracked.employeeEmail,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     if (allGroups.isEmpty)
                       const Text('Create a group first on the Groups page.')

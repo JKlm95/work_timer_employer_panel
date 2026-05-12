@@ -67,6 +67,23 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             return Scaffold(
               appBar: AppBar(
                 title: Text(employeeFullName(tr)),
+                actions: [
+                  IconButton(
+                    tooltip: 'Refresh name from directory',
+                    icon: const Icon(Icons.person_search_outlined),
+                    onPressed: () async {
+                      final ok = await widget.firestore.syncTrackedEmployeeProfileFromIndex(uid, tr.id);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            ok ? 'Name fields updated from user email index.' : 'No changes, or index not available.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
               body: FutureBuilder<List<ws.Workspace>>(
                 key: ValueKey('${tr.id}_$_workspaceEpoch'),
@@ -128,20 +145,15 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                                       fontWeight: FontWeight.w700,
                                                     ),
                                                   ),
-                                                  if (employeeLastName(tr).isNotEmpty)
+                                                  if (employeeShowEmailAsSubtitle(tr)) ...[
+                                                    const SizedBox(height: 4),
                                                     Text(
-                                                      '${employeeFirstName(tr)} · ${employeeLastName(tr)}',
-                                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                      tr.employeeEmail,
+                                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                       ),
                                                     ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    tr.employeeEmail,
-                                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                    ),
-                                                  ),
+                                                  ],
                                                   const SizedBox(height: 8),
                                                   Text('Company: ${tr.companyName}'),
                                                   const SizedBox(height: 8),

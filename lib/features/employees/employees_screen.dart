@@ -50,6 +50,27 @@ class EmployeesScreen extends StatelessWidget {
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           const Spacer(),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              messenger.showSnackBar(
+                                const SnackBar(content: Text('Syncing names from directory…')),
+                              );
+                              final n = await firestore.syncTrackedEmployeeProfilesFromIndex(uid);
+                              if (!context.mounted) return;
+                              messenger.hideCurrentSnackBar();
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    n == 0 ? 'No name updates (index empty or already up to date).' : 'Updated $n employee(s).',
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.sync_outlined),
+                            label: const Text('Sync names'),
+                          ),
+                          const SizedBox(width: 12),
                           FilledButton.icon(
                             onPressed: () => showAddEmployeeDialog(context, firestore),
                             icon: const Icon(Icons.person_add_alt_1_outlined),
@@ -193,23 +214,15 @@ class _EmployeesTableState extends State<_EmployeesTable> {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
-                              if (employeeLastName(t).isNotEmpty)
+                              if (employeeShowEmailAsSubtitle(t))
                                 Text(
-                                  '${employeeFirstName(t)} · ${employeeLastName(t)}',
+                                  t.employeeEmail,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
-                              Text(
-                                t.employeeEmail,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
                             ],
                           ),
                         ),

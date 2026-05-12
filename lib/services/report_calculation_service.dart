@@ -150,6 +150,7 @@ class PayrollLine extends Equatable {
   const PayrollLine({
     required this.trackedId,
     required this.employeeLabel,
+    this.employeeEmailSubtitle,
     required this.companyName,
     required this.groupLabels,
     required this.totalHours,
@@ -164,6 +165,8 @@ class PayrollLine extends Equatable {
 
   final String trackedId;
   final String employeeLabel;
+  /// Shown under [employeeLabel] when different from the primary label (avoids duplicate email).
+  final String? employeeEmailSubtitle;
   final String companyName;
   final String groupLabels;
   final double totalHours;

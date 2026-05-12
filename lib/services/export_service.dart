@@ -72,8 +72,11 @@ class ExportService {
       ],
     ];
     for (final line in lines) {
+      final employeeCell = line.employeeEmailSubtitle != null && line.employeeEmailSubtitle!.isNotEmpty
+          ? '${line.employeeLabel} (${line.employeeEmailSubtitle})'
+          : line.employeeLabel;
       rows.add([
-        line.employeeLabel,
+        employeeCell,
         line.companyName,
         line.groupLabels,
         line.totalHours.toStringAsFixed(2),

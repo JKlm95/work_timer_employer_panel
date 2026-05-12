@@ -137,8 +137,34 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             hint: const Text('All employees'),
                             items: [
                               const DropdownMenuItem<String?>(value: null, child: Text('All employees')),
-                              for (final t in trackedAll)
-                                DropdownMenuItem(value: t.id, child: Text(employeeFullName(t))),
+                                              for (final t in trackedAll)
+                                DropdownMenuItem<String?>(
+                                  value: t.id,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: employeeShowEmailAsSubtitle(t)
+                                        ? Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                employeeFullName(t),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                t.employeeEmail,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : Text(employeeFullName(t)),
+                                  ),
+                                ),
                             ],
                             onChanged: (v) => setState(() => _trackedId = v),
                           ),
@@ -207,6 +233,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                           return PayrollLine(
                                             trackedId: line.trackedId,
                                             employeeLabel: line.employeeLabel,
+                                            employeeEmailSubtitle: line.employeeEmailSubtitle,
                                             companyName: line.companyName,
                                             groupLabels: line.groupLabels,
                                             totalHours: line.totalHours,
@@ -292,7 +319,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                               for (final line in lines)
                                                 DataRow(
                                                   cells: [
-                                                    DataCell(Text(line.employeeLabel)),
+                                                    DataCell(_payrollEmployeeCell(context, line)),
                                                     DataCell(Text(line.companyName)),
                                                     DataCell(Text(line.totalHours.toStringAsFixed(2))),
                                                     DataCell(Text(line.billableHours.toStringAsFixed(2))),
@@ -382,6 +409,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         PayrollLine(
           trackedId: t.id,
           employeeLabel: employeeFullName(t),
+          employeeEmailSubtitle: employeeShowEmailAsSubtitle(t) ? t.employeeEmail : null,
           companyName: t.companyName,
           groupLabels: groupLabels.isEmpty ? '—' : groupLabels,
           totalHours: totalRowHours,
@@ -430,6 +458,28 @@ class _PayrollScreenState extends State<PayrollScreen> {
       s += e.duration!.inMinutes / 60.0;
     }
     return s;
+  }
+
+  static Widget _payrollEmployeeCell(BuildContext context, PayrollLine line) {
+    final sub = line.employeeEmailSubtitle;
+    if (sub == null || sub.isEmpty) {
+      return Text(line.employeeLabel);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(line.employeeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(
+          sub,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
   }
 }
 

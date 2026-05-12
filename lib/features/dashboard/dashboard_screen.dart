@@ -280,7 +280,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         subtitle: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(e.employeeEmail, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                            if (employeeShowEmailAsSubtitle(e))
+                                              Text(e.employeeEmail, maxLines: 1, overflow: TextOverflow.ellipsis),
                                             Text(e.companyName, maxLines: 1, overflow: TextOverflow.ellipsis),
                                             const SizedBox(height: 4),
                                             Text(

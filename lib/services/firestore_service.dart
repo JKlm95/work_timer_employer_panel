@@ -130,6 +130,89 @@ class FirestoreService {
     await _employerTracked(employerUid).doc(trackedId).delete();
   }
 
+  Map<String, dynamic> _nameFieldsFromIndex(UserEmailIndex index) {
+    final m = <String, dynamic>{};
+    final fn = index.firstName?.trim();
+    final ln = index.lastName?.trim();
+    final dn = index.displayName?.trim();
+    if (fn != null && fn.isNotEmpty) m['firstName'] = fn;
+    if (ln != null && ln.isNotEmpty) m['lastName'] = ln;
+    if (dn != null && dn.isNotEmpty) m['displayName'] = dn;
+    return m;
+  }
+
+  Map<String, dynamic> _mergeNameFieldsIfMissing(Map<String, dynamic> existing, UserEmailIndex index) {
+    final patch = <String, dynamic>{};
+    bool missing(String k) {
+      final s = existing[k];
+      if (s == null) return true;
+      if (s is String && s.trim().isEmpty) return true;
+      return false;
+    }
+
+    void fill(String key, String? fromIndex) {
+      final v = fromIndex?.trim();
+      if (v == null || v.isEmpty) return;
+      if (missing(key)) patch[key] = v;
+    }
+
+    fill('firstName', index.firstName);
+    fill('lastName', index.lastName);
+    fill('displayName', index.displayName);
+    return patch;
+  }
+
+  Map<String, dynamic> _overwriteNameFieldsFromIndexWhereProvided(
+    Map<String, dynamic> existing,
+    UserEmailIndex index,
+  ) {
+    final patch = <String, dynamic>{};
+    void consider(String key, String? fromIndex) {
+      final v = fromIndex?.trim();
+      if (v == null || v.isEmpty) return;
+      final cur = existing[key];
+      final curStr = cur is String ? cur.trim() : '';
+      if (curStr != v) patch[key] = v;
+    }
+
+    consider('firstName', index.firstName);
+    consider('lastName', index.lastName);
+    consider('displayName', index.displayName);
+    return patch;
+  }
+
+  /// Pulls latest name fields from `userEmailIndex` into one `trackedEmployees` doc (when index has data).
+  Future<bool> syncTrackedEmployeeProfileFromIndex(String employerUid, String trackedDocId) async {
+    final ref = _employerTracked(employerUid).doc(trackedDocId);
+    final d = await ref.get();
+    if (!d.exists || d.data() == null) return false;
+    final emailLower = d.data()!['employeeEmailLower'] as String?;
+    if (emailLower == null || emailLower.isEmpty) return false;
+    final idx = await getUserEmailIndex(emailLower);
+    if (idx == null) return false;
+    final patch = _overwriteNameFieldsFromIndexWhereProvided(d.data()!, idx);
+    if (patch.isEmpty) return false;
+    await ref.update(patch);
+    return true;
+  }
+
+  /// Refreshes every tracked employee from `userEmailIndex`. Returns how many docs were updated.
+  Future<int> syncTrackedEmployeeProfilesFromIndex(String employerUid) async {
+    final snap = await _employerTracked(employerUid).get();
+    var n = 0;
+    for (final d in snap.docs) {
+      final emailLower = d.data()['employeeEmailLower'] as String?;
+      if (emailLower == null || emailLower.isEmpty) continue;
+      final idx = await getUserEmailIndex(emailLower);
+      if (idx == null) continue;
+      final patch = _overwriteNameFieldsFromIndexWhereProvided(d.data(), idx);
+      if (patch.isEmpty) continue;
+      await d.reference.update(patch);
+      n++;
+    }
+    return n;
+  }
+
   /// **TODO (mobile):** If the app always writes `end` on entries, this stream never fires — add
   /// `liveStatus` (or equivalent) later. Until then, "Working" = at least one non-deleted entry
   /// with `end == null`.
@@ -268,14 +351,20 @@ class FirestoreService {
     ).limit(1).get();
 
     if (existing.docs.isNotEmpty) {
+      final doc = existing.docs.first;
+      final mergePatch = _mergeNameFieldsIfMissing(doc.data(), index);
+      if (mergePatch.isNotEmpty) {
+        await doc.reference.update(mergePatch);
+      }
       throw EmployerLinkException('This employee is already on your list for this company.');
     }
 
+    final nameFields = _nameFieldsFromIndex(index);
     await _employerTracked(employerUid).add({
       'employeeUid': index.uid,
       'employeeEmail': employeeWorkEmailInput.trim(),
       'employeeEmailLower': employeeEmailLower,
-      'displayName': index.displayName,
+      ...nameFields,
       'companyName': matched.companyName ?? companyNameInput.trim(),
       'companySlug': normalizedSlug,
       'addedAt': FieldValue.serverTimestamp(),
