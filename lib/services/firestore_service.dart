@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/utils/company_slug_utils.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/report_period.dart';
+import '../models/employee_live_status.dart';
 import '../models/employer_group.dart';
 import '../models/tracked_employee.dart';
 import '../models/user_email_index.dart';
@@ -30,6 +31,43 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> _employerGroups(String employerUid) =>
       _db.collection('employers').doc(employerUid).collection('groups');
+
+  CollectionReference<Map<String, dynamic>> _employerTrackedEmployeeUids(String employerUid) =>
+      _db.collection('employers').doc(employerUid).collection('trackedEmployeeUids');
+
+  /// One doc per `employeeUid` so rules can grant `users/{employeeUid}/live/status` to this employer.
+  Future<void> _setTrackedEmployeeUidAccess(String employerUid, String employeeUid) async {
+    final uid = employeeUid.trim();
+    if (uid.isEmpty) return;
+    await _employerTrackedEmployeeUids(employerUid).doc(uid).set({
+      'employeeUid': uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Backfill [trackedEmployeeUids] for employers who linked employees before this collection existed.
+  Future<void> ensureTrackedEmployeeUidAccessDocs(String employerUid) async {
+    final snap = await _employerTracked(employerUid).get();
+    for (final d in snap.docs) {
+      final uid = d.data()['employeeUid'] as String?;
+      if (uid == null || uid.trim().isEmpty) continue;
+      await _setTrackedEmployeeUidAccess(employerUid, uid);
+    }
+  }
+
+  /// `users/{employeeUid}/live/status` — mobile presence / timer.
+  Stream<EmployeeLiveStatus?> employeeLiveStatusStream(String employeeUid) {
+    return _db.collection('users').doc(employeeUid).collection('live').doc('status').snapshots().map((s) {
+      if (!s.exists || s.data() == null) return null;
+      return EmployeeLiveStatus.fromMap(s.data()!);
+    });
+  }
+
+  Future<EmployeeLiveStatus?> fetchEmployeeLiveStatus(String employeeUid) async {
+    final doc = await _db.collection('users').doc(employeeUid).collection('live').doc('status').get();
+    if (!doc.exists || doc.data() == null) return null;
+    return EmployeeLiveStatus.fromMap(doc.data()!);
+  }
 
   /// **TODO (mobile app):** Maintain `userEmailIndex/{emailLower}` after login so lookups work.
   Future<UserEmailIndex?> getUserEmailIndex(String emailLower) async {
@@ -134,7 +172,16 @@ class FirestoreService {
   }
 
   Future<void> removeTrackedEmployee(String employerUid, String trackedId) async {
-    await _employerTracked(employerUid).doc(trackedId).delete();
+    final ref = _employerTracked(employerUid).doc(trackedId);
+    final snap = await ref.get();
+    final removedUid = snap.data()?['employeeUid'] as String?;
+    await ref.delete();
+    if (removedUid != null && removedUid.trim().isNotEmpty) {
+      final others = await _employerTracked(employerUid).where('employeeUid', isEqualTo: removedUid).limit(1).get();
+      if (others.docs.isEmpty) {
+        await _employerTrackedEmployeeUids(employerUid).doc(removedUid.trim()).delete();
+      }
+    }
   }
 
   Map<String, dynamic> _nameFieldsFromIndex(UserEmailIndex index) {
@@ -214,9 +261,7 @@ class FirestoreService {
     return n;
   }
 
-  /// **TODO (mobile):** If the app always writes `end` on entries, this stream never fires — add
-  /// `liveStatus` (or equivalent) later. Until then, "Working" = at least one non-deleted entry
-  /// with `end == null`.
+  /// **Legacy:** open entry with `end == null`. Prefer [employeeLiveStatusStream] for UI presence.
   Stream<bool> hasOpenTimerStream(String employeeUid) {
     return _db
         .collection('users')
@@ -358,6 +403,7 @@ class FirestoreService {
       if (patch.isNotEmpty) {
         await doc.reference.update(patch);
       }
+      await _setTrackedEmployeeUidAccess(employerUid, index.uid.trim());
       throw EmployerLinkException('This employee is already on your list for this company.');
     }
 
@@ -368,6 +414,7 @@ class FirestoreService {
       'addedAt': FieldValue.serverTimestamp(),
       'groupIds': <String>[],
     });
+    await _setTrackedEmployeeUidAccess(employerUid, index.uid.trim());
   }
 }
 

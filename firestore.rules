@@ -9,28 +9,54 @@ rules_version = '2';
 // - userEmailIndex/{emailLower}
 // - users/{uid}/workspaces/{workspaceId}
 // - users/{uid}/entries/{entryId}
+// - users/{uid}/live/status
 // - employers/{employerUid}/trackedEmployees/{id}
+// - employers/{employerUid}/trackedEmployeeUids/{employeeUid}
 // - employers/{employerUid}/groups/{groupId}
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // TODO: Restrict reads — do not allow broad user collection reads in production.
-    match /users/{userId}/{document=**} {
-      allow read: if false;
-      allow write: if false;
+    function employerTracksUser(employeeUid) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedEmployeeUids/$(employeeUid));
     }
 
-    // Employers resolve employees by work email; reads must match deployed client (getUserEmailIndex).
-    // TODO: tighten (e.g. same email domain as auth token) before production.
+    match /users/{userId} {
+      match /live/status {
+        allow read: if employerTracksUser(userId);
+        allow write: if false;
+      }
+      match /workspaces/{wid} {
+        allow read: if employerTracksUser(userId);
+        allow write: if false;
+      }
+      match /entries/{eid} {
+        allow read: if employerTracksUser(userId);
+        allow write: if false;
+      }
+      match /{document=**} {
+        allow read: if false;
+        allow write: if false;
+      }
+    }
+
     match /userEmailIndex/{email} {
       allow read: if request.auth != null;
       allow write: if false;
     }
 
+    match /employers/{employerId}/trackedEmployees/{tid} {
+      allow read, write: if request.auth != null && request.auth.uid == employerId;
+    }
+    match /employers/{employerId}/trackedEmployeeUids/{employeeUid} {
+      allow read, write: if request.auth != null && request.auth.uid == employerId;
+    }
+    match /employers/{employerId}/groups/{gid} {
+      allow read, write: if request.auth != null && request.auth.uid == employerId;
+    }
     match /employers/{employerId}/{document=**} {
-      allow read: if false;
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

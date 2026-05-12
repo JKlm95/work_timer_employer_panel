@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/email_domain_utils.dart';
 import '../../core/utils/report_period.dart';
-import '../../core/widgets/work_status_badge.dart';
+import '../../core/widgets/employee_presence_badge.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
 import '../../models/work_entry.dart';
@@ -167,12 +167,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                                     runSpacing: 8,
                                                     crossAxisAlignment: WrapCrossAlignment.center,
                                                     children: [
-                                                      StreamBuilder<bool>(
-                                                        stream: widget.firestore.hasOpenTimerStream(tr.employeeUid),
-                                                        builder: (context, st) {
-                                                          final working = st.data ?? false;
-                                                          return WorkStatusBadge(isWorking: working);
-                                                        },
+                                                      EmployeePresenceBadge(
+                                                        firestore: widget.firestore,
+                                                        tracked: tr,
                                                       ),
                                                       FutureBuilder<DateTime?>(
                                                         future: widget.firestore.fetchLastActivityAt(tr.employeeUid),

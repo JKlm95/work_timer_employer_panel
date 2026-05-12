@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/report_period.dart';
-import '../../core/widgets/work_status_badge.dart';
+import '../../core/widgets/employee_presence_badge.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
 import '../../services/firestore_service.dart';
@@ -12,10 +15,50 @@ import '../../services/report_calculation_service.dart';
 import 'widgets/add_employee_dialog.dart';
 import 'widgets/assign_groups_sheet.dart';
 
-class EmployeesScreen extends StatelessWidget {
+class EmployeesScreen extends StatefulWidget {
   const EmployeesScreen({super.key, required this.firestore});
 
   final FirestoreService firestore;
+
+  @override
+  State<EmployeesScreen> createState() => _EmployeesScreenState();
+}
+
+class _EmployeesScreenState extends State<EmployeesScreen> {
+  int _monthRefreshNonce = 0;
+  bool _monthRefreshing = false;
+  DateTime? _lastMonthRefresh;
+  Timer? _autoMonthTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoMonthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!mounted) return;
+      setState(() => _monthRefreshNonce++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoMonthTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _manualMonthRefresh(String employerUid) async {
+    setState(() => _monthRefreshing = true);
+    try {
+      await widget.firestore.ensureTrackedEmployeeUidAccessDocs(employerUid);
+      if (mounted) {
+        setState(() {
+          _monthRefreshNonce++;
+          _lastMonthRefresh = DateTime.now();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _monthRefreshing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,10 +66,10 @@ class EmployeesScreen extends StatelessWidget {
     if (uid == null) return const SizedBox.shrink();
 
     return StreamBuilder<List<TrackedEmployee>>(
-      stream: firestore.trackedEmployeesStream(uid),
+      stream: widget.firestore.trackedEmployeesStream(uid),
       builder: (context, trackedSnap) {
         return StreamBuilder<List<EmployerGroup>>(
-          stream: firestore.groupsStream(uid),
+          stream: widget.firestore.groupsStream(uid),
           builder: (context, groupsSnap) {
             final tracked = trackedSnap.data ?? [];
             final groups = groupsSnap.data ?? [];
@@ -44,19 +87,42 @@ class EmployeesScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
                             'Employees',
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           const Spacer(),
+                          if (_lastMonthRefresh != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Text(
+                                'Last updated: ${DateFormat.Hms().format(_lastMonthRefresh!)}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          IconButton(
+                            tooltip: 'Refresh data',
+                            onPressed: tracked.isEmpty || _monthRefreshing ? null : () => _manualMonthRefresh(uid),
+                            icon: _monthRefreshing
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.refresh),
+                          ),
+                          const SizedBox(width: 4),
                           OutlinedButton.icon(
                             onPressed: () async {
                               final messenger = ScaffoldMessenger.of(context);
                               messenger.showSnackBar(
                                 const SnackBar(content: Text('Syncing names from directory…')),
                               );
-                              final n = await firestore.syncTrackedEmployeeProfilesFromIndex(uid);
+                              final n = await widget.firestore.syncTrackedEmployeeProfilesFromIndex(uid);
                               if (!context.mounted) return;
                               messenger.hideCurrentSnackBar();
                               messenger.showSnackBar(
@@ -72,7 +138,7 @@ class EmployeesScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                           FilledButton.icon(
-                            onPressed: () => showAddEmployeeDialog(context, firestore),
+                            onPressed: () => showAddEmployeeDialog(context, widget.firestore),
                             icon: const Icon(Icons.person_add_alt_1_outlined),
                             label: const Text('Add employee'),
                           ),
@@ -105,7 +171,7 @@ class EmployeesScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(height: 24),
                                         FilledButton.icon(
-                                          onPressed: () => showAddEmployeeDialog(context, firestore),
+                                          onPressed: () => showAddEmployeeDialog(context, widget.firestore),
                                           icon: const Icon(Icons.person_add_alt_1_outlined),
                                           label: const Text('Add employee'),
                                         ),
@@ -122,11 +188,11 @@ class EmployeesScreen extends StatelessWidget {
                                     constraints: BoxConstraints(minWidth: MediaQuery.sizeOf(context).width - 48),
                                     child: _EmployeesTable(
                                       key: ValueKey(
-                                        tracked.map((e) => e.id).join(','),
+                                        '${tracked.map((e) => e.id).join(',')}_$_monthRefreshNonce',
                                       ),
                                       tracked: tracked,
                                       groups: groups,
-                                      firestore: firestore,
+                                      firestore: widget.firestore,
                                       employerUid: uid,
                                     ),
                                   ),
@@ -230,11 +296,10 @@ class _EmployeesTableState extends State<_EmployeesTable> {
                     ),
                   ),
                   DataCell(
-                    StreamBuilder<bool>(
-                      stream: widget.firestore.hasOpenTimerStream(t.employeeUid),
-                      builder: (context, st) {
-                        return WorkStatusBadge(isWorking: st.data ?? false, compact: true);
-                      },
+                    EmployeePresenceBadge(
+                      firestore: widget.firestore,
+                      tracked: t,
+                      compact: true,
                     ),
                   ),
                   DataCell(Text(t.companyName)),
