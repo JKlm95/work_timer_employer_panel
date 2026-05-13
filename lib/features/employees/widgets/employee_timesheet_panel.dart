@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -485,6 +486,15 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
       amountOf: (e) =>
           EntryAmountResult.compute(e, _wsMap[e.workspaceId]).amountValue ?? 0,
     );
+
+    if (kDebugMode && raw.isNotEmpty && filtered.isEmpty && !loading) {
+      debugPrint(
+        '[Timesheet/filter] employer=${widget.employerUid} '
+        'employee=${widget.employeeUid} month=${_period.start.toIso8601String()}..'
+        '${_period.endInclusive.toIso8601String()} raw=${raw.length} '
+        'skippedReason=all rows removed by workspace/type/billable/deleted/search filters',
+      );
+    }
 
     if (raw.isEmpty && !loading) {
       return AppEmptyState(

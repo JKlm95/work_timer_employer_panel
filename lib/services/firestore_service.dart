@@ -65,13 +65,61 @@ class FirestoreService {
     required String employeeUid,
     required Set<String> workspaceIds,
     required int chunkCount,
+    ReportPeriod? period,
     String? extra,
   }) {
     if (!kDebugMode) return;
+    final periodStr = period == null
+        ? ''
+        : ' month=${period.start.toIso8601String()}..${period.endInclusive.toIso8601String()}';
+    final ids = workspaceIds.toList()..sort();
     debugPrint(
-      '[EmployerFS/$op] employer=$employerUid employee=$employeeUid '
-      'trackedWsCount=${workspaceIds.length} chunks=$chunkCount${extra != null ? ' $extra' : ''}',
+      '[EmployerFS/$op] employer=$employerUid employee=$employeeUid$periodStr '
+      'trackedWorkspaceIds=$ids trackedWsCount=${workspaceIds.length} '
+      'chunks=$chunkCount${extra != null ? ' $extra' : ''}',
     );
+  }
+
+  /// Debug-only: explain why an entry would not appear in employer month stats
+  /// (Firestore query already scopes by [allowedWorkspaceIds] and `start` in [period]).
+  void _logEmployerEntriesPostQueryDebug({
+    required String op,
+    required String employerUid,
+    required String employeeUid,
+    required ReportPeriod period,
+    required Set<String> allowedWorkspaceIds,
+    required List<WorkEntry> entries,
+  }) {
+    if (!kDebugMode) return;
+    var outsideAllowedWs = 0;
+    var deleted = 0;
+    var startBefore = 0;
+    var startAfter = 0;
+    final startBound = period.start;
+    final endBound = period.endInclusive;
+    for (final e in entries) {
+      final wid = e.workspaceId.trim();
+      if (!allowedWorkspaceIds.contains(wid)) outsideAllowedWs++;
+      if (e.isDeleted) deleted++;
+      if (e.start.isBefore(startBound)) startBefore++;
+      if (e.start.isAfter(endBound)) startAfter++;
+    }
+    debugPrint(
+      '[EmployerFS/$op RESULT] employer=$employerUid employee=$employeeUid '
+      'entriesReturned=${entries.length} '
+      '(query=start in month only, not overlap by end; '
+      'see DATA_CONTRACT if entries straddle month boundary)',
+    );
+    if (outsideAllowedWs > 0 ||
+        deleted > 0 ||
+        startBefore > 0 ||
+        startAfter > 0) {
+      debugPrint(
+        '[EmployerFS/$op RESULT] sanity flags: workspaceIdNotInAllowed=$outsideAllowedWs '
+        'isDeleted=$deleted startBeforeMonth=$startBefore startAfterMonth=$startAfter '
+        '(non-zero flags usually mean unexpected data vs query)',
+      );
+    }
   }
 
   /// Workspace-level access for this employer (real data scope for the panel).
@@ -263,6 +311,13 @@ class FirestoreService {
       if (uid.isNotEmpty) {
         await _setTrackedEmployeeUidAccess(employerUid, uid);
       }
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[EmployerFS/rebuildTrackedWorkspaceAccess] employer=$employerUid '
+        'qualifyingWorkspaceRows=$written trackedEmployees=${trackedSnap.docs.length} '
+        'distinctEmployeesInRebuild=${byEmployee.length}',
+      );
     }
     return written;
   }
@@ -494,6 +549,13 @@ class FirestoreService {
   }
 
   /// Entries in range limited to `trackedWorkspaces` for this employer.
+  ///
+  /// Query: `workspaceId in <allowed trimmed ids>` (chunked, max 10) and
+  /// `start` in \[period.start, period.endInclusive\]. Entries whose `start`
+  /// falls outside that window are not returned (even if `end` overlaps the month).
+  /// Rules: `employerHasTrackedWorkspace(employeeUid, resource.workspaceId)` uses the
+  /// **exact** `workspaceId` string on the entry doc — it must match the id segment
+  /// in `employers/.../trackedWorkspaces/{employeeUid}_{workspaceId}` (see `firestore.rules`).
   Future<List<WorkEntry>> fetchEntriesInRangeForEmployer(
     String employerUid,
     String employeeUid,
@@ -512,7 +574,8 @@ class FirestoreService {
           employeeUid: employeeUid,
           workspaceIds: allowed,
           chunkCount: 0,
-          extra: 'workspaceIds empty',
+          period: period,
+          extra: 'query skipped because workspaceIds empty',
         );
       }
       return [];
@@ -533,6 +596,7 @@ class FirestoreService {
         employeeUid: employeeUid,
         workspaceIds: allowed,
         chunkCount: chunks.length,
+        period: period,
       );
     }
     final startTs = Timestamp.fromDate(period.start);
@@ -577,6 +641,25 @@ class FirestoreService {
       }
     }
     merged.sort((a, b) => a.start.compareTo(b.start));
+    if (kDebugMode) {
+      _logEmployerEntriesPostQueryDebug(
+        op: 'fetchEntries',
+        employerUid: employerUid,
+        employeeUid: employeeUid,
+        period: period,
+        allowedWorkspaceIds: allowed,
+        entries: merged,
+      );
+      if (merged.isEmpty && allowed.isNotEmpty) {
+        debugPrint(
+          '[EmployerFS/fetchEntries] hint: 0 docs — confirm entry.workspaceId '
+          'matches trackedWorkspaces doc id ($employeeUid plus underscore plus '
+          'workspace doc id, trimmed). Rules use the raw entry.workspaceId string. '
+          'start must be a Timestamp within month '
+          '(${period.start.toIso8601String()}..${period.endInclusive.toIso8601String()}).',
+        );
+      }
+    }
     return merged;
   }
 
@@ -602,7 +685,9 @@ class FirestoreService {
 
     void attachForWorkspaces(Set<String> allowedRaw) {
       final allowed = normalizedWorkspaceIdSet(allowedRaw);
-      if (setEquals(lastAttachedIds, allowed)) return;
+      if (lastAttachedIds != null && setEquals(lastAttachedIds, allowed)) {
+        return;
+      }
       lastAttachedIds = Set<String>.from(allowed);
       tearEntrySubs();
       final gen = ++attachGen;
@@ -620,6 +705,7 @@ class FirestoreService {
         if (kDebugMode && chunks.isNotEmpty) {
           debugPrint(
             '[EmployerFS/touchSignals] employer=$employerUid employee=$employeeUid '
+            'month=${period.start.toIso8601String()}..${period.endInclusive.toIso8601String()} '
             'chunks=${chunks.length} firstChunk=${chunks.first.length}',
           );
         }
@@ -716,6 +802,7 @@ class FirestoreService {
         <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
     Set<String>? lastAttachedIds;
     var attachGen = 0;
+    var lastLoggedEmitCount = -1;
 
     void tearEntrySubs() {
       for (final s in entrySubs) {
@@ -726,7 +813,9 @@ class FirestoreService {
 
     void attachForWorkspaces(Set<String> allowedRaw) {
       final allowed = normalizedWorkspaceIdSet(allowedRaw);
-      if (setEquals(lastAttachedIds, allowed)) return;
+      if (lastAttachedIds != null && setEquals(lastAttachedIds, allowed)) {
+        return;
+      }
       lastAttachedIds = Set<String>.from(allowed);
       tearEntrySubs();
       final gen = ++attachGen;
@@ -751,6 +840,7 @@ class FirestoreService {
             employeeUid: employeeUid,
             workspaceIds: captured,
             chunkCount: chunks.length,
+            period: period,
           );
         }
         final lists = List<List<WorkEntry>>.generate(
@@ -760,6 +850,23 @@ class FirestoreService {
         void emit() {
           final merged = <WorkEntry>[for (final l in lists) ...l]
             ..sort((a, b) => a.start.compareTo(b.start));
+          if (kDebugMode) {
+            if (merged.length != lastLoggedEmitCount) {
+              lastLoggedEmitCount = merged.length;
+              debugPrint(
+                '[EmployerFS/entriesMonthStream emit] employer=$employerUid '
+                'employee=$employeeUid month=${period.start.toIso8601String()}..'
+                '${period.endInclusive.toIso8601String()} entries=${merged.length}',
+              );
+              if (merged.isEmpty && captured.isNotEmpty) {
+                debugPrint(
+                  '[EmployerFS/entriesMonthStream emit] 0 merged rows with '
+                  '${captured.length} allowed workspace(s); same hints as fetchEntries '
+                  '(workspaceId string vs tracked doc id, start in month, rules).',
+                );
+              }
+            }
+          }
           if (!controller.isClosed) controller.add(merged);
         }
 
