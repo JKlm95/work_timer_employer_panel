@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -18,6 +19,39 @@ import '../../services/report_calculation_service.dart';
 import '../employees/widgets/add_employee_dialog.dart';
 import '../groups/widgets/create_group_dialog.dart';
 import 'dashboard_live_status_host.dart';
+
+class _DashboardStreamError extends StatelessWidget {
+  const _DashboardStreamError({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 48, color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 16),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              SelectableText(
+                detail,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 int _countWorkingNow(List<TrackedEmployee> tracked, Map<String, EmployeeLiveStatus?> live) {
   final seen = <String>{};
@@ -54,7 +88,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _autoStatsTimer;
   List<TrackedEmployee> _latestTracked = [];
 
-  ReportPeriod get _thisMonth => monthContaining(DateTime.now());
+  /// Avoid calling [setState] during [build] (tracked StreamBuilder); schedule sync after frame.
+  List<TrackedEmployee> _pendingStatsTracked = [];
+  bool _statsPostFrameScheduled = false;
 
   @override
   void initState() {
@@ -73,6 +109,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _autoStatsTimer?.cancel();
     super.dispose();
+  }
+
+  ReportPeriod get _thisMonth => monthContaining(DateTime.now());
+
+  void _onPostFrameSyncStats(Duration _) {
+    _statsPostFrameScheduled = false;
+    if (!mounted) return;
+    _syncStatsIfNeeded(_pendingStatsTracked);
+  }
+
+  /// Do not call from [build] synchronously — it ends in [setState]. Use post-frame scheduling.
+  void _requestDashboardStatsSync(List<TrackedEmployee> tracked) {
+    _pendingStatsTracked = List<TrackedEmployee>.from(tracked);
+    if (_statsPostFrameScheduled) return;
+    _statsPostFrameScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback(_onPostFrameSyncStats);
   }
 
   void _syncStatsIfNeeded(List<TrackedEmployee> tracked) {
@@ -112,43 +164,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<_DashboardSnapshot> _loadDashboardSnapshot(List<TrackedEmployee> tracked) async {
-    final period = _thisMonth;
-    double totalHours = 0;
-    final amountByCurrency = <String, double>{};
-    final lastByTracked = <String, DateTime?>{};
-    final workspaceMapsByEmployeeUid = <String, Map<String, Workspace>>{};
+    try {
+      final period = _thisMonth;
+      double totalHours = 0;
+      final amountByCurrency = <String, double>{};
+      final lastByTracked = <String, DateTime?>{};
+      final workspaceMapsByEmployeeUid = <String, Map<String, Workspace>>{};
 
-    final lastTimes = await Future.wait(tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid)));
-    for (var i = 0; i < tracked.length; i++) {
-      lastByTracked[tracked[i].id] = lastTimes[i];
-    }
-
-    for (final t in tracked) {
-      final entries = await widget.firestore.fetchEntriesInRange(t.employeeUid, period);
-      final workspaces = await widget.firestore.fetchEmployeeWorkspaces(t.employeeUid);
-      final wsMap = {for (final w in workspaces) w.id: w};
-      workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
-      final filtered = entries.where((e) {
-        if (e.isDeleted || e.end == null) return false;
-        if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() != t.companySlug.toLowerCase()) {
-          return false;
-        }
-        return true;
-      }).toList();
-      totalHours += _calc.hoursForEntries(filtered);
-      final money = _calc.estimatedAmountByCurrency(
-        entries: filtered.where((e) => e.isWorkEntry).toList(),
-        workspaceById: wsMap,
+      final lastTimes = await Future.wait(
+        tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid)),
       );
-      money.forEach((k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v);
-    }
+      for (var i = 0; i < tracked.length; i++) {
+        lastByTracked[tracked[i].id] = lastTimes[i];
+      }
 
-    return _DashboardSnapshot(
-      totalHours: totalHours,
-      amountByCurrency: amountByCurrency,
-      lastActivityByTrackedId: lastByTracked,
-      workspaceMapsByEmployeeUid: workspaceMapsByEmployeeUid,
-    );
+      for (final t in tracked) {
+        final entries = await widget.firestore.fetchEntriesInRange(t.employeeUid, period);
+        final workspaces = await widget.firestore.fetchEmployeeWorkspaces(t.employeeUid);
+        final wsMap = {for (final w in workspaces) w.id: w};
+        workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
+        final filtered = entries.where((e) {
+          if (e.isDeleted || e.end == null) return false;
+          if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() != t.companySlug.toLowerCase()) {
+            return false;
+          }
+          return true;
+        }).toList();
+        totalHours += _calc.hoursForEntries(filtered);
+        final money = _calc.estimatedAmountByCurrency(
+          entries: filtered.where((e) => e.isWorkEntry).toList(),
+          workspaceById: wsMap,
+        );
+        money.forEach((k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v);
+      }
+
+      return _DashboardSnapshot(
+        totalHours: totalHours,
+        amountByCurrency: amountByCurrency,
+        lastActivityByTrackedId: lastByTracked,
+        workspaceMapsByEmployeeUid: workspaceMapsByEmployeeUid,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[Dashboard] _loadDashboardSnapshot failed: $e');
+        debugPrintStack(stackTrace: st, label: 'dashboard_stats');
+      }
+      return _DashboardSnapshot.empty();
+    }
   }
 
   @override
@@ -164,6 +226,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return StreamBuilder<List<EmployerGroup>>(
           stream: widget.firestore.groupsStream(uid),
           builder: (context, groupsSnap) {
+            if (trackedSnap.hasError) {
+              if (kDebugMode) {
+                debugPrint('[Dashboard] trackedEmployeesStream error: ${trackedSnap.error}');
+              }
+              return _DashboardStreamError(
+                title: 'Could not load employees',
+                detail: '${trackedSnap.error}',
+              );
+            }
+            if (groupsSnap.hasError) {
+              if (kDebugMode) {
+                debugPrint('[Dashboard] groupsStream error: ${groupsSnap.error}');
+              }
+              return _DashboardStreamError(
+                title: 'Could not load groups',
+                detail: '${groupsSnap.error}',
+              );
+            }
+
             final tracked = trackedSnap.data ?? [];
             final groupsCount = groupsSnap.data?.length ?? 0;
 
@@ -171,7 +252,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            _syncStatsIfNeeded(tracked);
+            _requestDashboardStatsSync(tracked);
 
             final statsFuture = _statsFuture ??
                 Future.value(_DashboardSnapshot.empty());
@@ -180,8 +261,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               tracked: tracked,
               firestore: widget.firestore,
               builder: (context, liveByUid) {
-                final workingNow = _countWorkingNow(tracked, liveByUid);
-                return SingleChildScrollView(
+                try {
+                  final workingNow = _countWorkingNow(tracked, liveByUid);
+                  return SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: Align(
                     alignment: Alignment.topCenter,
@@ -239,22 +321,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             future: statsFuture,
                             builder: (context, snap) {
                               if (snap.hasError) {
+                                if (kDebugMode) {
+                                  debugPrint('[Dashboard] FutureBuilder stats error: ${snap.error}');
+                                  final st = snap.stackTrace;
+                                  if (st != null) debugPrintStack(stackTrace: st, label: 'dashboard_stats_future');
+                                }
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 16),
-                                  child: Text(
-                                    'Could not load monthly stats.',
-                                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Could not load monthly stats.',
+                                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      SelectableText(
+                                        '${snap.error}',
+                                        style: Theme.of(context).textTheme.bodySmall,
+                                      ),
+                                    ],
                                   ),
                                 );
                               }
                               final loading = snap.connectionState == ConnectionState.waiting;
                               final stats = snap.data ?? _DashboardSnapshot.empty();
-                              final liveSummary = computeLiveRunningMoneySummary(
-                                tracked: tracked,
-                                liveByEmployeeUid: liveByUid,
-                                workspaceMapsByEmployeeUid: stats.workspaceMapsByEmployeeUid,
-                                at: DateTime.now(),
-                              );
+                              LiveRunningMoneySummary liveSummary;
+                              try {
+                                liveSummary = computeLiveRunningMoneySummary(
+                                  tracked: tracked,
+                                  liveByEmployeeUid: liveByUid,
+                                  workspaceMapsByEmployeeUid: stats.workspaceMapsByEmployeeUid,
+                                  at: DateTime.now(),
+                                );
+                              } catch (e, st) {
+                                if (kDebugMode) {
+                                  debugPrint('[Dashboard] live amount compute failed: $e');
+                                  debugPrintStack(stackTrace: st, label: 'dashboard_live_amount');
+                                }
+                                liveSummary = LiveRunningMoneySummary(
+                                  byCurrency: {},
+                                  hasRunningWithoutRate: false,
+                                );
+                              }
                               return LayoutBuilder(
                                 builder: (context, constraints) {
                                   final w = constraints.maxWidth;
@@ -377,6 +486,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : FutureBuilder<_DashboardSnapshot>(
                                     future: statsFuture,
                                     builder: (context, snap) {
+                                      if (snap.hasError) {
+                                        if (kDebugMode) {
+                                          debugPrint('[Dashboard] recent list stats error: ${snap.error}');
+                                          final st = snap.stackTrace;
+                                          if (st != null) {
+                                            debugPrintStack(stackTrace: st, label: 'dashboard_recent_list');
+                                          }
+                                        }
+                                        return Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Text(
+                                            'Could not load activity for this list.',
+                                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                          ),
+                                        );
+                                      }
                                       final st = snap.data;
                                       return ListView.separated(
                                         shrinkWrap: true,
@@ -428,6 +553,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 );
+                } catch (e, st) {
+                  if (kDebugMode) {
+                    debugPrint('[Dashboard] live host builder failed: $e');
+                    debugPrintStack(stackTrace: st, label: 'dashboard_live_host_builder');
+                  }
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Dashboard layout error. Pull to refresh or use Refresh data.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    ),
+                  );
+                }
               },
             );
           },

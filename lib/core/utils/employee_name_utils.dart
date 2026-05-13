@@ -27,12 +27,19 @@ String employeeInitials(TrackedEmployee t) {
   if (fn.length >= 2) return fn.substring(0, 2).toUpperCase();
   if (fn.isNotEmpty) return fn[0].toUpperCase();
   final full = t.fullName;
-  final parts = full.split(RegExp(r'\s+'));
+  final parts = full.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) {
     final s = parts.single;
     if (s.length >= 2) return (s[0] + s[1]).toUpperCase();
     return s.isNotEmpty ? s[0].toUpperCase() : '?';
   }
-  return ('${parts[0][0]}${parts[1][0]}').toUpperCase();
+  final a = parts[0];
+  final b = parts[1];
+  if (a.isEmpty || b.isEmpty) {
+    final c = (a + b).trim();
+    if (c.length >= 2) return (c[0] + c[1]).toUpperCase();
+    return c.isNotEmpty ? c[0].toUpperCase() : '?';
+  }
+  return ('${a[0]}${b[0]}').toUpperCase();
 }
