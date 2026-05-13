@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/employee_live_status.dart';
@@ -65,10 +66,19 @@ class _DashboardLiveStatusHostState extends State<DashboardLiveStatusHost> {
       final uid = t.employeeUid;
       if (uid.isEmpty) continue;
       _subs.add(
-        widget.firestore.employeeLiveStatusStream(uid).listen((v) {
-          if (!mounted) return;
-          setState(() => _live[uid] = v);
-        }),
+        widget.firestore.employeeLiveStatusStream(uid).listen(
+          (v) {
+            if (!mounted) return;
+            setState(() => _live[uid] = v);
+          },
+          onError: (Object e, StackTrace st) {
+            if (kDebugMode) {
+              debugPrint('[LiveStatus] stream subscription error uid=$uid $e\n$st');
+            }
+            if (!mounted) return;
+            setState(() => _live[uid] = null);
+          },
+        ),
       );
     }
   }

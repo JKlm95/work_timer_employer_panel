@@ -2,40 +2,54 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:work_timer_employer_panel/core/utils/employee_presence_utils.dart';
 import 'package:work_timer_employer_panel/models/employee_live_status.dart';
-import 'package:work_timer_employer_panel/models/tracked_employee.dart';
-
-TrackedEmployee _tr({String slug = 'acme'}) {
-  return TrackedEmployee(
-    id: 'tid',
-    employeeUid: 'uid1',
-    employeeEmail: 'a@b.c',
-    employeeEmailLower: 'a@b.c',
-    companyName: 'Acme',
-    companySlug: slug,
-  );
-}
 
 void main() {
-  test('running + matching slug => working', () {
+  test('running shows working regardless of activeCompanySlug', () {
     final live = EmployeeLiveStatus(
-      isOnline: true,
       timerState: 'running',
-      activeCompanySlug: 'acme',
+      activeCompanySlug: 'other-company',
       lastSeenAt: DateTime.now(),
     );
-    expect(resolveWorkPresence(live: live, tracked: _tr()), WorkPresenceState.working);
+    expect(resolveWorkPresence(live: live), WorkPresenceState.working);
   });
 
   test('no live doc => offline', () {
-    expect(resolveWorkPresence(live: null, tracked: _tr()), WorkPresenceState.offline);
+    expect(resolveWorkPresence(live: null), WorkPresenceState.offline);
   });
 
-  test('paused + matching slug => paused', () {
+  test('paused shows paused', () {
     final live = EmployeeLiveStatus(
       timerState: 'paused',
       activeCompanySlug: 'Acme',
       lastSeenAt: DateTime.now(),
     );
-    expect(resolveWorkPresence(live: live, tracked: _tr()), WorkPresenceState.paused);
+    expect(resolveWorkPresence(live: live), WorkPresenceState.paused);
+  });
+
+  test('idle + isOnline true + fresh lastSeen => online', () {
+    final live = EmployeeLiveStatus(
+      timerState: 'idle',
+      isOnline: true,
+      lastSeenAt: DateTime.now(),
+    );
+    expect(resolveWorkPresence(live: live), WorkPresenceState.online);
+  });
+
+  test('idle + isOnline true but stale lastSeen => offline', () {
+    final live = EmployeeLiveStatus(
+      timerState: 'idle',
+      isOnline: true,
+      lastSeenAt: DateTime.now().subtract(const Duration(minutes: 5)),
+    );
+    expect(resolveWorkPresence(live: live), WorkPresenceState.offline);
+  });
+
+  test('idle + isOnline null => unknown', () {
+    final live = EmployeeLiveStatus(
+      timerState: 'idle',
+      isOnline: null,
+      lastSeenAt: DateTime.now(),
+    );
+    expect(resolveWorkPresence(live: live), WorkPresenceState.unknown);
   });
 }

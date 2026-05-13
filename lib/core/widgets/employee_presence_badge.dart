@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/employee_live_status.dart';
@@ -24,7 +25,21 @@ class EmployeePresenceBadge extends StatelessWidget {
     return StreamBuilder<EmployeeLiveStatus?>(
       stream: firestore.employeeLiveStatusStream(tracked.employeeUid),
       builder: (context, snap) {
-        final state = resolveWorkPresence(live: snap.data, tracked: tracked);
+        if (snap.hasError) {
+          if (kDebugMode) {
+            debugPrint(
+              '[LiveStatus] StreamBuilder error uid=${tracked.employeeUid} tracked=${tracked.id} ${snap.error}',
+            );
+          }
+          return WorkStatusBadge(state: WorkPresenceState.unknown, compact: compact);
+        }
+
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return WorkStatusBadge(state: WorkPresenceState.unknown, compact: compact);
+        }
+
+        final live = snap.data;
+        final state = resolveWorkPresence(live: live);
         return WorkStatusBadge(state: state, compact: compact);
       },
     );

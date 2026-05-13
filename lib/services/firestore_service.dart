@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
+import '../core/debug/live_status_debug_config.dart';
 import '../core/utils/company_slug_utils.dart';
 import '../core/utils/email_domain_utils.dart';
+import '../core/utils/employee_presence_utils.dart';
 import '../core/utils/report_period.dart';
 import '../models/employee_live_status.dart';
 import '../models/employer_group.dart';
@@ -58,15 +61,49 @@ class FirestoreService {
   /// `users/{employeeUid}/live/status` — mobile presence / timer.
   Stream<EmployeeLiveStatus?> employeeLiveStatusStream(String employeeUid) {
     return _db.collection('users').doc(employeeUid).collection('live').doc('status').snapshots().map((s) {
-      if (!s.exists || s.data() == null) return null;
-      return EmployeeLiveStatus.fromMap(s.data()!);
+      try {
+        if (!s.exists) {
+          if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
+            debugPrint('[LiveStatus] uid=$employeeUid no document');
+          }
+          return null;
+        }
+        final data = s.data();
+        if (data == null) return null;
+        final r = EmployeeLiveStatus.fromMap(data);
+        if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
+          final presence = resolveWorkPresence(live: r);
+          final secs = r.currentAccumulatedSeconds(DateTime.now());
+          debugPrint(
+            '[LiveStatus] uid=$employeeUid timerState=${r.timerState} isOnline=${r.isOnline} '
+            'activeWorkspaceId=${r.activeWorkspaceId} activeCompanySlug=${r.activeCompanySlug} '
+            'hourlyRate=${r.hourlyRate} currency=${r.currency} lastSeenAt=${r.lastSeenAt} updatedAt=${r.updatedAt} '
+            '=> presence=$presence accumulatedSeconds=$secs',
+          );
+        }
+        return r;
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[LiveStatus] parse error uid=$employeeUid $e\n$st');
+        }
+        return null;
+      }
     });
   }
 
   Future<EmployeeLiveStatus?> fetchEmployeeLiveStatus(String employeeUid) async {
-    final doc = await _db.collection('users').doc(employeeUid).collection('live').doc('status').get();
-    if (!doc.exists || doc.data() == null) return null;
-    return EmployeeLiveStatus.fromMap(doc.data()!);
+    try {
+      final doc = await _db.collection('users').doc(employeeUid).collection('live').doc('status').get();
+      if (!doc.exists) return null;
+      final data = doc.data();
+      if (data == null) return null;
+      return EmployeeLiveStatus.fromMap(data);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[LiveStatus] fetch error uid=$employeeUid $e\n$st');
+      }
+      return null;
+    }
   }
 
   /// **TODO (mobile app):** Maintain `userEmailIndex/{emailLower}` after login so lookups work.

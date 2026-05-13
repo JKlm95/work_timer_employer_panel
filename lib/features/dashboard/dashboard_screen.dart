@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/utils/employee_name_utils.dart';
-import '../../core/utils/employee_presence_utils.dart';
 import '../../core/utils/live_running_amounts.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/employee_presence_badge.dart';
@@ -21,9 +20,14 @@ import '../groups/widgets/create_group_dialog.dart';
 import 'dashboard_live_status_host.dart';
 
 int _countWorkingNow(List<TrackedEmployee> tracked, Map<String, EmployeeLiveStatus?> live) {
+  final seen = <String>{};
   var n = 0;
   for (final t in tracked) {
-    if (resolveWorkPresence(live: live[t.employeeUid], tracked: t) == WorkPresenceState.working) {
+    final uid = t.employeeUid;
+    if (uid.isEmpty || seen.contains(uid)) continue;
+    final l = live[uid];
+    if (l != null && l.timerStateLower == 'running') {
+      seen.add(uid);
       n++;
     }
   }
@@ -234,9 +238,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           FutureBuilder<_DashboardSnapshot>(
                             future: statsFuture,
                             builder: (context, snap) {
+                              if (snap.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  child: Text(
+                                    'Could not load monthly stats.',
+                                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                  ),
+                                );
+                              }
                               final loading = snap.connectionState == ConnectionState.waiting;
                               final stats = snap.data ?? _DashboardSnapshot.empty();
-                              final liveMoney = liveRunningAmountByCurrency(
+                              final liveSummary = computeLiveRunningMoneySummary(
                                 tracked: tracked,
                                 liveByEmployeeUid: liveByUid,
                                 workspaceMapsByEmployeeUid: stats.workspaceMapsByEmployeeUid,
@@ -281,7 +294,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     _SummaryCard(
                                       title: 'Live running (est.)',
                                       subtitle: 'UI only — not saved',
-                                      value: loading ? '…' : _formatMoney(liveMoney),
+                                      value: loading ? '…' : liveSummary.displayValue(),
                                       icon: Icons.bolt_outlined,
                                       loading: loading,
                                       denseValue: true,
