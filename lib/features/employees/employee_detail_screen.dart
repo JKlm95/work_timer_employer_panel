@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
-import '../../core/utils/email_domain_utils.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/app_pulse_loading.dart';
 import '../../core/widgets/app_pinned_toolbar.dart';
@@ -42,10 +41,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final employerDomain = emailDomain(
-      FirebaseAuth.instance.currentUser?.email ?? '',
-    );
-    if (uid == null || employerDomain == null) {
+    if (uid == null) {
       return const Scaffold(body: Center(child: Text('Not signed in')));
     }
 
@@ -227,9 +223,11 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                   Expanded(
                     child: FutureBuilder<List<ws.Workspace>>(
                       key: ValueKey('${tr.id}_$_workspaceEpoch'),
-                      future: widget.firestore.fetchEmployeeWorkspaces(
-                        tr.employeeUid,
-                      ),
+                      future: widget.firestore
+                          .fetchEmployeeWorkspacesForEmployer(
+                            uid,
+                            tr.employeeUid,
+                          ),
                       builder: (context, wsSnap) {
                         if (wsSnap.hasError) {
                           return Center(
@@ -296,20 +294,13 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                             child: Text('No workspace data.'),
                           );
                         }
-                        final workspaces = wsSnap.data!.where((w) {
-                          final slugOk =
-                              (w.companySlug ?? '').toLowerCase() ==
-                              tr.companySlug.toLowerCase();
-                          final dom = w.employeeWorkEmailDomain?.toLowerCase();
-                          final domOk = dom != null && dom == employerDomain;
-                          return slugOk && domOk;
-                        }).toList();
+                        final workspaces = wsSnap.data!;
 
                         final calc = ReportCalculationService();
                         final period = monthContaining(DateTime.now());
 
                         return FutureBuilder<_EmpHeaderStats>(
-                          future: _loadHeaderStats(tr, period, calc),
+                          future: _loadHeaderStats(uid, tr, period, calc),
                           builder: (context, hdr) {
                             final stats = hdr.data;
                             return SingleChildScrollView(
@@ -419,7 +410,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                                             >(
                                                               future: widget
                                                                   .firestore
-                                                                  .fetchLastActivityAt(
+                                                                  .fetchLastActivityAtForEmployer(
+                                                                    uid,
                                                                     tr.employeeUid,
                                                                   ),
                                                               builder: (context, la) {
@@ -524,7 +516,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                             child: Column(
                                               children: [
                                                 Text(
-                                                  'No projects available for this access scope.',
+                                                  'No shared workspaces available for this employee.',
                                                   textAlign: TextAlign.center,
                                                   style: Theme.of(context)
                                                       .textTheme
@@ -557,6 +549,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                               bottom: 12,
                                             ),
                                             child: _ProjectCard(
+                                              employerUid: uid,
                                               workspace: w,
                                               tracked: tr,
                                               firestore: widget.firestore,
@@ -594,17 +587,18 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   }
 
   Future<_EmpHeaderStats> _loadHeaderStats(
+    String employerUid,
     TrackedEmployee tr,
     ReportPeriod period,
     ReportCalculationService calc,
   ) async {
-    final entries = await widget.firestore.fetchEntriesInRange(
+    final entries = await widget.firestore.fetchEntriesInRangeForEmployer(
+      employerUid,
       tr.employeeUid,
       period,
     );
-    final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
-      tr.employeeUid,
-    );
+    final workspaces = await widget.firestore
+        .fetchEmployeeWorkspacesForEmployer(employerUid, tr.employeeUid);
     final wsMap = {for (final w in workspaces) w.id: w};
     final filtered = entries.where((e) {
       if (e.isDeleted || e.end == null) return false;
@@ -642,6 +636,7 @@ class _EmpHeaderStats {
 
 class _ProjectCard extends StatelessWidget {
   const _ProjectCard({
+    required this.employerUid,
     required this.workspace,
     required this.tracked,
     required this.firestore,
@@ -650,6 +645,7 @@ class _ProjectCard extends StatelessWidget {
     required this.onBillingUpdated,
   });
 
+  final String employerUid;
   final ws.Workspace workspace;
   final TrackedEmployee tracked;
   final FirestoreService firestore;
@@ -672,7 +668,11 @@ class _ProjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<WorkEntry>>(
-      future: firestore.fetchEntriesInRange(tracked.employeeUid, period),
+      future: firestore.fetchEntriesInRangeForEmployer(
+        employerUid,
+        tracked.employeeUid,
+        period,
+      ),
       builder: (context, snap) {
         if (snap.hasError) {
           return Card(
@@ -814,6 +814,7 @@ class _ProjectCard extends StatelessWidget {
                               onPressed: () async {
                                 await showEditWorkspaceBillingDialog(
                                   context,
+                                  employerUid: employerUid,
                                   firestore: firestore,
                                   employeeUid: tracked.employeeUid,
                                   workspace: workspace,

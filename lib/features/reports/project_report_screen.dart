@@ -110,7 +110,10 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
           key: ValueKey(
             '${te.employeeUid}_${widget.workspaceId}_$_workspaceReloadKey',
           ),
-          future: widget.firestore.fetchEmployeeWorkspaces(te.employeeUid),
+          future: widget.firestore.fetchEmployeeWorkspacesForEmployer(
+            employerUid,
+            te.employeeUid,
+          ),
           builder: (context, wsSnap) {
             if (!wsSnap.hasData) {
               return const Scaffold(
@@ -124,7 +127,11 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
             if (selectedWs == null) {
               return Scaffold(
                 appBar: AppBar(title: const Text('Report')),
-                body: const Center(child: Text('Project not found.')),
+                body: const Center(
+                  child: Text(
+                    'Project not found or not shared with your account.',
+                  ),
+                ),
               );
             }
 
@@ -132,7 +139,8 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
             final period = _period();
 
             return FutureBuilder<List<WorkEntry>>(
-              future: widget.firestore.fetchEntriesInRange(
+              future: widget.firestore.fetchEntriesInRangeForEmployer(
+                employerUid,
                 te.employeeUid,
                 period,
               ),
@@ -174,6 +182,7 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                         onPressed: () async {
                           await showEditWorkspaceBillingDialog(
                             context,
+                            employerUid: employerUid,
                             firestore: widget.firestore,
                             employeeUid: te.employeeUid,
                             workspace: workspace,

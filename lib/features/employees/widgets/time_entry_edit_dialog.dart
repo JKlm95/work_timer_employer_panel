@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/quarter_hour_time_slots.dart';
 import '../../../core/utils/time_entry_validation.dart';
 import '../../../models/work_entry.dart';
 import '../../../models/workspace.dart';
@@ -205,6 +206,7 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
           employeeUid: widget.employeeUid,
           entryId: widget.existing!.id,
           data: data,
+          employerUid: employer,
         );
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -246,12 +248,9 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _workspaceId,
+                  value: _validWorkspaceDropdownValue(),
                   decoration: const InputDecoration(labelText: 'Workspace'),
-                  items: [
-                    for (final w in widget.workspaces)
-                      DropdownMenuItem(value: w.id, child: Text(w.name)),
-                  ],
+                  items: _workspaceMenuItems(),
                   onChanged: (v) => setState(() => _workspaceId = v),
                   validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                 ),
@@ -273,7 +272,7 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                       child: DropdownButtonFormField<TimeOfDay>(
                         value: _startT,
                         decoration: const InputDecoration(labelText: 'Start'),
-                        items: _timeMenu(),
+                        items: _timeMenu(including: _startT),
                         onChanged: (v) =>
                             v != null ? setState(() => _startT = v) : null,
                       ),
@@ -283,7 +282,7 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                       child: DropdownButtonFormField<TimeOfDay>(
                         value: _endT,
                         decoration: const InputDecoration(labelText: 'End'),
-                        items: _timeMenu(),
+                        items: _timeMenu(including: _endT),
                         onChanged: (v) =>
                             v != null ? setState(() => _endT = v) : null,
                       ),
@@ -386,14 +385,45 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
     );
   }
 
-  List<DropdownMenuItem<TimeOfDay>> _timeMenu() {
-    final items = <DropdownMenuItem<TimeOfDay>>[];
-    for (var h = 0; h < 24; h++) {
-      for (final m in [0, 15, 30, 45]) {
-        final t = TimeOfDay(hour: h, minute: m);
-        items.add(DropdownMenuItem(value: t, child: Text(t.format(context))));
-      }
+  /// [DropdownButtonFormField] requires [value] to appear in [items].
+  List<DropdownMenuItem<TimeOfDay>> _timeMenu({required TimeOfDay including}) {
+    return [
+      for (final t in quarterHourSlotsIncluding(including))
+        DropdownMenuItem(value: t, child: Text(t.format(context))),
+    ];
+  }
+
+  List<DropdownMenuItem<String>> _workspaceMenuItems() {
+    final byId = {for (final w in widget.workspaces) w.id: w};
+    final wid = _workspaceId;
+    final items = <DropdownMenuItem<String>>[
+      for (final w in widget.workspaces)
+        DropdownMenuItem(value: w.id, child: Text(w.name)),
+    ];
+    if (wid != null &&
+        wid.isNotEmpty &&
+        !byId.containsKey(wid) &&
+        widget.existing != null) {
+      items.insert(
+        0,
+        DropdownMenuItem<String>(
+          value: wid,
+          child: Text(
+            'Current workspace (not in shared list)',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      );
     }
     return items;
+  }
+
+  /// Null if [_workspaceId] is set but not among items (empty list) — avoids dropdown assert.
+  String? _validWorkspaceDropdownValue() {
+    final wid = _workspaceId;
+    if (wid == null || wid.isEmpty) return null;
+    if (widget.workspaces.any((w) => w.id == wid)) return wid;
+    if (widget.existing != null) return wid;
+    return null;
   }
 }

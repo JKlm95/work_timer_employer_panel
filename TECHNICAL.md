@@ -54,7 +54,7 @@ lib/
 
 ### Aplikacja mobilna
 
-- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`
+- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`, **`isSharedWithEmployer`**, **`linkedEmployerEmails`** (opcjonalna lista e-maili pracodawców — lowercase)
 - `users/{employeeUid}/entries/{entryId}` — wpisy czasu; `isDeleted`, `entryType`, `isBillable`, `start`/`end`
 
 ### Indeks email → UID
@@ -88,6 +88,7 @@ Szczegóły pól modelu: `lib/models/employee_live_status.dart`.
 ### Live amount (szacunek w locie)
 
 - Liczone w **`lib/core/utils/live_running_amounts.dart`** (`computeLiveRunningMoneySummary`) wyłącznie w **pamięci UI** z aktualnego `EmployeeLiveStatus` + mapy workspace’ów (stawka z live doc lub z `users/.../workspaces`).
+- Dla panelu pracodawcy: jeśli przekazano mapę **`allowedWorkspaceIdsByEmployeeUid`** (dashboard), kwota jest liczona **tylko** gdy `activeWorkspaceId` ∈ dozwolonych ID — timer na prywatnym / innym workspace nie pokazuje kwoty w „Live running (est.)”.
 - **Nie jest** zapisywane do Firestore i **nie zastępuje** kwot z zamkniętych wpisów (`entries`) na karcie „Estimated amount (month)”.
 
 ### Legacy / hasOpenTimer
@@ -97,23 +98,32 @@ Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. 
 ### Dane pracodawcy
 
 - `employers/{employerUid}/trackedEmployees/{id}`
+- `employers/{employerUid}/trackedEmployeeUids/{employeeUid}` — **indeks** „znam UID” (m.in. `live/status`); nie jest już jedynym gate’em do `entries`.
+- `employers/{employerUid}/trackedWorkspaces/{accessId}` — **`accessId = employeeUid_workspaceId`**; **rzeczywisty zakres** widocznych workspace’ów i wpisów w panelu.
 - `employers/{employerUid}/groups/{groupId}`
+
+**Firestore indeksy:** zapytania miesięczne o wpisy u pracodawcy używają `where('workspaceId', whereIn: …)` (max 10 ID na zapytanie) + `start` — w konsoli Firebase dodaj indeks złożony na `entries`: `workspaceId` + `start` (zakres), jeśli deploy zwróci link do utworzenia indeksu.
+
+## Ustawienia — Rebuild workspace access
+
+- Ekran **Settings** zawiera akcję **Rebuild workspace access** (`FirestoreService.rebuildTrackedWorkspaceAccess`): dla każdego `trackedEmployees` odbudowuje zestaw dokumentów `trackedWorkspaces` wg `tracked_workspace_policy.dart`. **Brak automatycznej migracji** przy starcie aplikacji — tylko jawny przycisk.
 
 ### Dozwolone zapisy MVP w danych „pracownika”
 
-- Tylko **`updateWorkspaceBilling`** na `users/{uid}/workspaces/{id}` (`hourlyRate`, `currency`, `updatedAt`). Reszta danych pracownika — read-only z panelu.
+- Tylko **`updateWorkspaceBilling`** na `users/{uid}/workspaces/{id}` (`hourlyRate`, `currency`, `updatedAt`) — **po sprawdzeniu** `trackedWorkspaces`. Reszta danych pracownika — read-only z panelu.
 
 ## Logika dodawania pracownika (MVP)
 
 1. Normalizacja maila pracownika do lowercase.
 2. Normalizacja nazwy firmy do **slug** (`core/utils/company_slug_utils.dart`).
 3. Odczyt UID z `userEmailIndex`.
-4. Dopasowanie workspace (email + slug + domena pracodawcy).
-5. Zapis w `trackedEmployees`.
+4. Utworzenie / utrzymanie `trackedEmployeeUids/{uid}` (dostęp do `live/status` i odczytu workspace’ów przy linku).
+5. Dopasowanie workspace’ów: **`workspaceQualifiesForEmployerPanel`** (`tracked_workspace_policy.dart`) + slug firmy z formularza; utworzenie dokumentów **`trackedWorkspaces`** dla wszystkich pasujących projektów.
+6. Zapis w `trackedEmployees`.
 
 ## Wpisy czasu — timesheet pracodawcy
 
-- Na ekranie **szczegółów pracownika** (`EmployeeDetailScreen`) panel pokazuje **timesheet miesięczny**: filtry, sortowanie, podsumowanie oraz **dodawanie / edycja / soft delete / przywracanie** wpisów w `users/{employeeUid}/entries/{entryId}`.
+- Na ekranie **szczegółów pracownika** (`EmployeeDetailScreen`) panel pokazuje **timesheet miesięczny**: filtry, sortowanie, podsumowanie oraz **dodawanie / edycja / soft delete / przywracanie** wpisów w `users/{employeeUid}/entries/{entryId}` — **tylko** dla `workspaceId` obecnych w `trackedWorkspaces` (stream składa zapytania per chunk `whereIn`).
 - **Usuwanie** = wyłącznie **soft delete** (`isDeleted: true`, `updatedAt`), bez hard `delete` w Firestore.
 - **Kwoty** w tabeli i w `ReportCalculationService.estimatedAmountByCurrency` (dla wpisów `work` billable) liczą się jako:  
   `godziny × hourlyRate workspace × billingRatePercent / 100` (brak stawki → „No rate” / „—” w UI).

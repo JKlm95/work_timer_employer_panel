@@ -6,7 +6,7 @@ Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (A
 
 - [ ] **Logowanie employer** — email/hasło, po zalogowaniu shell (sidebar + treść).
 - [ ] **Dodanie pracownika po e-mailu** — poprawna domena + firma/slug; sukces → wpis na liście; błąd → czytelny komunikat („Employee not found” gdy brak indeksu).
-- [ ] **Profil pracownika** — wejście w szczegóły z listy: nazwa, firma, grupy, presence, ostatnia aktywność, karty projektów.
+- [ ] **Profil pracownika** — wejście w szczegóły z listy: nazwa, firma, grupy, presence, ostatnia aktywność (tylko wpisy z **udostępnionych** workspace’ów), karty projektów tylko z **`trackedWorkspaces`**.
 
 ## Timesheet (szczegóły pracownika)
 
@@ -18,7 +18,15 @@ Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (A
 - [ ] **Dodaj wpis** — formularz (workspace, data, start/end, typ, %, billable, task, note); walidacja `start < end`; zapis → snackbar; błąd → snackbar, brak czerwonego ekranu.
 - [ ] **Edycja** — zmiana pól i zapis; `editedAt` / `editedBy` jeśli reguły na to pozwalają.
 - [ ] **Soft delete** — potwierdzenie dialogiem; wpis znika z widoku domyślnego; z „Show deleted” widoczny + **Restore** przywraca.
-- [ ] **Brak workspace’ów** — sensowny komunikat („This employee has no workspaces”) i brak crasha przy dodawaniu wpisu.
+- [ ] **Brak workspace’ów** — komunikat *No shared workspaces available for this employee.* i brak crasha przy dodawaniu wpisu.
+
+## Udostępnione workspace’y (`trackedWorkspaces`)
+
+- [ ] **Dwóch pracodawców / dwie firmy** — employer A widzi tylko workspace A, employer B tylko B (wpisy i sumy się nie mieszają).
+- [ ] **Prywatny workspace** — nie widać na liście projektów; wpisy z niego nie wchodzą w godziny / kwoty / last activity.
+- [ ] **CRUD** — picker workspace’ów tylko z udostępnionych; próba zapisu do innego workspace (np. manipulacja) kończy się błędem z serwisu / reguł.
+- [ ] **Live running** — przy timerze na **niedostępnym** `activeWorkspaceId` brak kwoty w „Live running (est.)”; przy timerze na udostępnionym — kwota zgodna ze stawką.
+- [ ] **Po rebuildzie danych** — lista projektów i sumy na dashboardzie odzwierciedlają aktualne `trackedWorkspaces` (bez pełnego reinstall).
 
 ## Live status (mobile ↔ web)
 
@@ -38,6 +46,10 @@ Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (A
 - [ ] **Brak wpisów w wybranym miesiącu** — godziny / kwoty „0” lub „—”, bez crasha.
 - [ ] **Pracownik bez stawki** — **No rate** / brak kwoty przy live running; brak crasha przy raportach.
 - [ ] **Unknown** — przy błędzie streamu live lub `isOnline: null` badge nie wywala UI (np. **Unknown**).
+
+## Ustawienia
+
+- [ ] **Rebuild workspace access** — przycisk w Settings uruchamia migrację ręczną; po wykonaniu widoczny komunikat z wynikiem lub błędem.
 
 ## Opcjonalnie
 

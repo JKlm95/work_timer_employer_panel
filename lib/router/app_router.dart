@@ -77,7 +77,7 @@ GoRouter createAppRouter({required FirestoreService firestore}) {
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, state) => const SettingsScreen(),
+            builder: (context, state) => SettingsScreen(firestore: firestore),
           ),
         ],
       ),

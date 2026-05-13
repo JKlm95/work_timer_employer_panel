@@ -517,30 +517,30 @@ class _PayrollScreenState extends State<PayrollScreen> {
     List<TrackedEmployee> tracked,
     ReportPeriod period,
   ) async {
+    final employerUid = FirebaseAuth.instance.currentUser!.uid;
     final lines = <PayrollLine>[];
     var grandTotals = <String, double>{};
     var totalHoursAll = 0.0;
     var totalBillableAll = 0.0;
 
-    final groupsSnap = await widget.firestore
-        .groupsStream(FirebaseAuth.instance.currentUser!.uid)
-        .first;
+    final groupsSnap = await widget.firestore.groupsStream(employerUid).first;
     final groupName = {for (final g in groupsSnap) g.id: g.name};
 
     for (final t in tracked) {
-      final entries = await widget.firestore.fetchEntriesInRange(
+      final entries = await widget.firestore.fetchEntriesInRangeForEmployer(
+        employerUid,
         t.employeeUid,
         period,
       );
-      final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
-        t.employeeUid,
-      );
+      final workspaces = await widget.firestore
+          .fetchEmployeeWorkspacesForEmployer(employerUid, t.employeeUid);
       final wsMap = {for (final w in workspaces) w.id: w};
 
       final scoped = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
         final ws = wsMap[e.workspaceId];
-        return ws?.companySlug?.toLowerCase() == t.companySlug.toLowerCase();
+        if (ws == null) return false;
+        return ws.companySlug?.toLowerCase() == t.companySlug.toLowerCase();
       }).toList();
 
       final active = _billableOnly

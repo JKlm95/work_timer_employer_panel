@@ -398,7 +398,7 @@ class _EmployeesTableState extends State<_EmployeesTable> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, _EmpMonth>>(
-      future: _loadMonth(widget.tracked, widget.firestore),
+      future: _loadMonth(widget.tracked, widget.firestore, widget.employerUid),
       builder: (context, snap) {
         if (snap.hasError) {
           return Column(
@@ -586,6 +586,8 @@ class _EmployeesTableState extends State<_EmployeesTable> {
                           await widget.firestore.removeTrackedEmployee(
                             widget.employerUid,
                             t.id,
+                            employerEmail:
+                                FirebaseAuth.instance.currentUser?.email ?? '',
                           );
                         }
                       },
@@ -608,15 +610,24 @@ class _EmployeesTableState extends State<_EmployeesTable> {
   Future<Map<String, _EmpMonth>> _loadMonth(
     List<TrackedEmployee> tracked,
     FirestoreService fs,
+    String employerUid,
   ) async {
     final period = monthContaining(DateTime.now());
     final out = <String, _EmpMonth>{};
     for (final t in tracked) {
-      final entries = await fs.fetchEntriesInRange(t.employeeUid, period);
-      final workspaces = await fs.fetchEmployeeWorkspaces(t.employeeUid);
+      final entries = await fs.fetchEntriesInRangeForEmployer(
+        employerUid,
+        t.employeeUid,
+        period,
+      );
+      final workspaces = await fs.fetchEmployeeWorkspacesForEmployer(
+        employerUid,
+        t.employeeUid,
+      );
       final wsMap = {for (final w in workspaces) w.id: w};
       final filtered = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
+        if (wsMap[e.workspaceId] == null) return false;
         return wsMap[e.workspaceId]?.companySlug?.toLowerCase() ==
             t.companySlug.toLowerCase();
       }).toList();

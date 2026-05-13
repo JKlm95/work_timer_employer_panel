@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
@@ -9,7 +11,9 @@ import '../core/utils/employee_presence_utils.dart';
 import '../core/utils/report_period.dart';
 import '../models/employee_live_status.dart';
 import '../models/employer_group.dart';
+import '../core/utils/tracked_workspace_policy.dart' as twp;
 import '../models/tracked_employee.dart';
+import '../models/tracked_workspace_access.dart';
 import '../models/user_email_index.dart';
 import '../models/work_entry.dart';
 import '../models/workspace.dart';
@@ -20,10 +24,9 @@ import '../models/workspace.dart';
 /// employer-authored **time entries** under `users/{uid}/entries` (see [createEmployeeEntry]).
 /// Tracked employees and groups live under `employers/{employerUid}/…`.
 ///
-/// **Security:** Reads under `users/{uid}/...` assume Firestore rules eventually allow
-/// constrained access (e.g. only after employer–employee relationship exists). Do **not**
-/// ship production rules that expose all user documents. Functions or strict rules are
-/// needed for a hardened deployment — see `firestore.rules`.
+/// **Security:** Reads under `users/{uid}/...` assume Firestore rules allow employer access
+/// only for **`trackedWorkspaces`** (entries + billing) and **`trackedEmployeeUids`** (e.g. `live/status`),
+/// plus shared-workspace listing where applicable — see `firestore.rules`.
 class FirestoreService {
   FirestoreService({FirebaseFirestore? firestore})
     : _db = firestore ?? FirebaseFirestore.instance;
@@ -47,6 +50,304 @@ class FirestoreService {
       .collection('employers')
       .doc(employerUid)
       .collection('trackedEmployeeUids');
+
+  CollectionReference<Map<String, dynamic>> _employerTrackedWorkspaces(
+    String employerUid,
+  ) => _db
+      .collection('employers')
+      .doc(employerUid)
+      .collection('trackedWorkspaces');
+
+  static List<List<String>> _workspaceIdChunks(
+    Iterable<String> ids, {
+    int max = 10,
+  }) {
+    final list = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+      ..sort();
+    final chunks = <List<String>>[];
+    for (var i = 0; i < list.length; i += max) {
+      final end = i + max > list.length ? list.length : i + max;
+      chunks.add(list.sublist(i, end));
+    }
+    return chunks;
+  }
+
+  /// Workspace-level access for this employer (real data scope for the panel).
+  Future<List<TrackedWorkspaceAccess>> fetchTrackedWorkspaces(
+    String employerUid,
+  ) async {
+    final snap = await _employerTrackedWorkspaces(employerUid).get();
+    return snap.docs
+        .map((d) => TrackedWorkspaceAccess.fromDoc(d.id, d.data()))
+        .toList();
+  }
+
+  Stream<List<TrackedWorkspaceAccess>> trackedWorkspaceAccessStream(
+    String employerUid,
+  ) {
+    return _employerTrackedWorkspaces(employerUid).snapshots().map(
+      (s) => s.docs
+          .map((d) => TrackedWorkspaceAccess.fromDoc(d.id, d.data()))
+          .toList(),
+    );
+  }
+
+  Future<Set<String>> trackedWorkspaceIdsForEmployee(
+    String employerUid,
+    String employeeUid,
+  ) async {
+    final all = await fetchTrackedWorkspaces(employerUid);
+    final uid = employeeUid.trim();
+    return all
+        .where((a) => a.employeeUid == uid)
+        .map((a) => a.workspaceId)
+        .toSet();
+  }
+
+  Future<bool> employerCanAccessWorkspace(
+    String employerUid,
+    String employeeUid,
+    String workspaceId,
+  ) async {
+    final id = TrackedWorkspaceAccess.docIdFor(employeeUid, workspaceId);
+    final d = await _employerTrackedWorkspaces(employerUid).doc(id).get();
+    return d.exists;
+  }
+
+  List<WorkEntry> filterEntriesByTrackedWorkspaces(
+    Iterable<WorkEntry> entries,
+    Set<String> allowedWorkspaceIds,
+  ) => twp.filterEntriesByTrackedWorkspaces(entries, allowedWorkspaceIds);
+
+  /// Creates or merges one `trackedWorkspaces` row (e.g. admin / repair).
+  Future<void> ensureTrackedWorkspaceAccess({
+    required String employerUid,
+    required String employeeUid,
+    required String workspaceId,
+    required String employeeEmailLower,
+    required String companyName,
+    required String companySlug,
+    required String workspaceName,
+  }) async {
+    final id = TrackedWorkspaceAccess.docIdFor(employeeUid, workspaceId);
+    final ref = _employerTrackedWorkspaces(employerUid).doc(id);
+    final cur = await ref.get();
+    final access = TrackedWorkspaceAccess(
+      accessId: id,
+      employeeUid: employeeUid.trim(),
+      workspaceId: workspaceId.trim(),
+      employeeEmailLower: employeeEmailLower.trim().toLowerCase(),
+      companyName: companyName.trim(),
+      companySlug: companySlug.trim(),
+      workspaceName: workspaceName.trim(),
+    );
+    if (cur.exists) {
+      await ref.set(access.toMergePatch(), SetOptions(merge: true));
+    } else {
+      await ref.set(access.toWriteMap());
+    }
+  }
+
+  Future<void> _deleteAllTrackedWorkspacesForEmployee(
+    String employerUid,
+    String employeeUid,
+  ) async {
+    final uid = employeeUid.trim();
+    if (uid.isEmpty) return;
+    final snap = await _employerTrackedWorkspaces(
+      employerUid,
+    ).where('employeeUid', isEqualTo: uid).get();
+    for (final d in snap.docs) {
+      await d.reference.delete();
+    }
+  }
+
+  Future<void> _replaceTrackedWorkspacesForEmployee(
+    String employerUid,
+    String employeeUid,
+    Set<TrackedWorkspaceAccess> desired,
+  ) async {
+    final uid = employeeUid.trim();
+    if (uid.isEmpty) return;
+    final existing = await _employerTrackedWorkspaces(
+      employerUid,
+    ).where('employeeUid', isEqualTo: uid).get();
+    final desiredIds = desired.map((e) => e.accessId).toSet();
+    for (final d in existing.docs) {
+      if (!desiredIds.contains(d.id)) {
+        await d.reference.delete();
+      }
+    }
+    for (final a in desired) {
+      final ref = _employerTrackedWorkspaces(employerUid).doc(a.accessId);
+      final cur = await ref.get();
+      if (cur.exists) {
+        await ref.set(a.toMergePatch(), SetOptions(merge: true));
+      } else {
+        await ref.set(a.toWriteMap());
+      }
+    }
+  }
+
+  /// Recomputes `trackedWorkspaces` for every tracked employee row from live workspace data.
+  ///
+  /// Call explicitly from Settings — no automatic migration.
+  Future<int> rebuildTrackedWorkspaceAccess({
+    required String employerUid,
+    required String employerEmail,
+    bool preferServer = false,
+  }) async {
+    final employerDomain = emailDomain(employerEmail);
+    if (employerDomain == null) {
+      throw EmployerLinkException(
+        'Employer email domain is required to rebuild workspace access.',
+      );
+    }
+    final employerEmailLower = employerEmail.trim().toLowerCase();
+    await ensureTrackedEmployeeUidAccessDocs(employerUid);
+    final trackedSnap = await _employerTracked(employerUid).get();
+    var written = 0;
+    final byEmployee = <String, Set<TrackedWorkspaceAccess>>{};
+    for (final d in trackedSnap.docs) {
+      final data = d.data();
+      final employeeUid = (data['employeeUid'] as String?)?.trim() ?? '';
+      final emailLower =
+          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
+      final companySlug =
+          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
+      final companyName = (data['companyName'] as String?)?.trim() ?? '';
+      if (employeeUid.isEmpty || emailLower.isEmpty || companySlug.isEmpty) {
+        continue;
+      }
+      final workspaces = await fetchEmployeeWorkspaces(
+        employeeUid,
+        preferServer: preferServer,
+      );
+      for (final w in workspaces) {
+        if ((w.companySlug ?? '').trim().toLowerCase() != companySlug) continue;
+        if (!twp.workspaceQualifiesForEmployerPanel(
+          w: w,
+          employeeEmailLower: emailLower,
+          employerDomain: employerDomain,
+          normalizedCompanySlug: companySlug,
+          employerEmailLower: employerEmailLower,
+        )) {
+          continue;
+        }
+        final id = TrackedWorkspaceAccess.docIdFor(employeeUid, w.id);
+        byEmployee.putIfAbsent(employeeUid, () => <TrackedWorkspaceAccess>{});
+        byEmployee[employeeUid]!.add(
+          TrackedWorkspaceAccess(
+            accessId: id,
+            employeeUid: employeeUid,
+            workspaceId: w.id,
+            employeeEmailLower: emailLower,
+            companyName: companyName.isNotEmpty
+                ? companyName
+                : (w.companyName ?? ''),
+            companySlug: companySlug,
+            workspaceName: w.name,
+          ),
+        );
+        written++;
+      }
+    }
+    for (final e in byEmployee.entries) {
+      await _replaceTrackedWorkspacesForEmployee(employerUid, e.key, e.value);
+    }
+    for (final d in trackedSnap.docs) {
+      final uid = (d.data()['employeeUid'] as String?)?.trim() ?? '';
+      if (uid.isNotEmpty) {
+        await _setTrackedEmployeeUidAccess(employerUid, uid);
+      }
+    }
+    return written;
+  }
+
+  Future<void> _syncTrackedWorkspacesForEmployeeUid({
+    required String employerUid,
+    required String employeeUid,
+    required String employerEmailLower,
+    required String employerDomain,
+  }) async {
+    final uid = employeeUid.trim();
+    if (uid.isEmpty) return;
+    final remaining = await _employerTracked(
+      employerUid,
+    ).where('employeeUid', isEqualTo: uid).get();
+    if (remaining.docs.isEmpty) {
+      await _deleteAllTrackedWorkspacesForEmployee(employerUid, uid);
+      await _employerTrackedEmployeeUids(employerUid).doc(uid).delete();
+      return;
+    }
+    final workspaces = await fetchEmployeeWorkspaces(uid);
+    final desired = <TrackedWorkspaceAccess>{};
+    for (final d in remaining.docs) {
+      final data = d.data();
+      final emailLower =
+          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
+      final companySlug =
+          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
+      final companyName = (data['companyName'] as String?)?.trim() ?? '';
+      if (emailLower.isEmpty || companySlug.isEmpty) continue;
+      for (final w in workspaces) {
+        if ((w.companySlug ?? '').trim().toLowerCase() != companySlug) continue;
+        if (!twp.workspaceQualifiesForEmployerPanel(
+          w: w,
+          employeeEmailLower: emailLower,
+          employerDomain: employerDomain,
+          normalizedCompanySlug: companySlug,
+          employerEmailLower: employerEmailLower,
+        )) {
+          continue;
+        }
+        final id = TrackedWorkspaceAccess.docIdFor(uid, w.id);
+        desired.add(
+          TrackedWorkspaceAccess(
+            accessId: id,
+            employeeUid: uid,
+            workspaceId: w.id,
+            employeeEmailLower: emailLower,
+            companyName: companyName.isNotEmpty
+                ? companyName
+                : (w.companyName ?? ''),
+            companySlug: companySlug,
+            workspaceName: w.name,
+          ),
+        );
+      }
+    }
+    await _replaceTrackedWorkspacesForEmployee(employerUid, uid, desired);
+    await _setTrackedEmployeeUidAccess(employerUid, uid);
+  }
+
+  /// Workspaces the employer may see for [employeeUid] (from `trackedWorkspaces` + live docs).
+  Future<List<Workspace>> fetchEmployeeWorkspacesForEmployer(
+    String employerUid,
+    String employeeUid, {
+    bool preferServer = false,
+  }) async {
+    final access = await fetchTrackedWorkspaces(employerUid);
+    final uid = employeeUid.trim();
+    final mine = access.where((a) => a.employeeUid == uid).toList();
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
+    final out = <Workspace>[];
+    for (final a in mine) {
+      final d = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('workspaces')
+          .doc(a.workspaceId)
+          .get(opts);
+      if (d.exists && d.data() != null) {
+        out.add(Workspace.fromDoc(d.id, d.data()!));
+      }
+    }
+    out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return out;
+  }
 
   /// One doc per `employeeUid` so rules can grant `users/{employeeUid}/live/status` to this employer.
   Future<void> _setTrackedEmployeeUidAccess(
@@ -155,9 +456,7 @@ class FirestoreService {
     return snap.docs.map((d) => Workspace.fromDoc(d.id, d.data())).toList();
   }
 
-  /// Reads employee time entries in `[start, end]` by `start` field (MVP query).
-  ///
-  /// Composite index may be required: `entries` collection — `start` ASC + optional filters.
+  /// Reads employee time entries in `[start, end]` by `start` (no employer filter).
   Future<List<WorkEntry>> fetchEntriesInRange(
     String employeeUid,
     ReportPeriod period, {
@@ -166,7 +465,7 @@ class FirestoreService {
     final startTs = Timestamp.fromDate(period.start);
     final endTs = Timestamp.fromDate(period.endInclusive);
     final ref = _db.collection('users').doc(employeeUid).collection('entries');
-    Query<Map<String, dynamic>> q = ref
+    final q = ref
         .where('start', isGreaterThanOrEqualTo: startTs)
         .where('start', isLessThanOrEqualTo: endTs);
     final opts = GetOptions(
@@ -176,7 +475,103 @@ class FirestoreService {
     return snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList();
   }
 
-  /// Live updates when any entry in [period] (by `start`) changes for [employeeUid].
+  /// Entries in range limited to `trackedWorkspaces` for this employer.
+  Future<List<WorkEntry>> fetchEntriesInRangeForEmployer(
+    String employerUid,
+    String employeeUid,
+    ReportPeriod period, {
+    bool preferServer = false,
+  }) async {
+    final allowed = await trackedWorkspaceIdsForEmployee(
+      employerUid,
+      employeeUid,
+    );
+    if (allowed.isEmpty) return [];
+    final startTs = Timestamp.fromDate(period.start);
+    final endTs = Timestamp.fromDate(period.endInclusive);
+    final ref = _db.collection('users').doc(employeeUid).collection('entries');
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
+    final merged = <WorkEntry>[];
+    final seen = <String>{};
+    for (final chunk in _workspaceIdChunks(allowed)) {
+      final snap = await ref
+          .where('workspaceId', whereIn: chunk)
+          .where('start', isGreaterThanOrEqualTo: startTs)
+          .where('start', isLessThanOrEqualTo: endTs)
+          .get(opts);
+      for (final d in snap.docs) {
+        if (seen.add(d.id)) {
+          merged.add(WorkEntry.fromDoc(d.id, d.data()));
+        }
+      }
+    }
+    merged.sort((a, b) => a.start.compareTo(b.start));
+    return merged;
+  }
+
+  /// Live updates when any **tracked-workspace** entry in [period] changes.
+  Stream<void> entriesMonthTouchSignalsForEmployer(
+    String employerUid,
+    String employeeUid,
+    ReportPeriod period,
+  ) {
+    late final StreamController<void> controller;
+    StreamSubscription<List<TrackedWorkspaceAccess>>? accessSub;
+    final entrySubs =
+        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+    void tearEntrySubs() {
+      for (final s in entrySubs) {
+        s.cancel();
+      }
+      entrySubs.clear();
+    }
+
+    void attachForWorkspaces(Set<String> allowed) {
+      tearEntrySubs();
+      if (allowed.isEmpty) return;
+      final startTs = Timestamp.fromDate(period.start);
+      final endTs = Timestamp.fromDate(period.endInclusive);
+      final ref = _db
+          .collection('users')
+          .doc(employeeUid)
+          .collection('entries');
+      for (final chunk in _workspaceIdChunks(allowed)) {
+        final sub = ref
+            .where('workspaceId', whereIn: chunk)
+            .where('start', isGreaterThanOrEqualTo: startTs)
+            .where('start', isLessThanOrEqualTo: endTs)
+            .snapshots()
+            .listen((_) {
+              if (!controller.isClosed) controller.add(null);
+            }, onError: controller.addError);
+        entrySubs.add(sub);
+      }
+    }
+
+    controller = StreamController<void>.broadcast(
+      onListen: () {
+        accessSub = trackedWorkspaceAccessStream(employerUid).listen((
+          accessList,
+        ) {
+          final allowed = accessList
+              .where((a) => a.employeeUid == employeeUid.trim())
+              .map((a) => a.workspaceId)
+              .toSet();
+          attachForWorkspaces(allowed);
+        }, onError: controller.addError);
+      },
+      onCancel: () {
+        tearEntrySubs();
+        accessSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Unfiltered month query (employee-owned reads / tests).
   Stream<QuerySnapshot<Map<String, dynamic>>> entriesInMonthSnapshots(
     String employeeUid,
     ReportPeriod period,
@@ -196,23 +591,98 @@ class FirestoreService {
     String employeeUid,
   ) => _db.collection('users').doc(employeeUid).collection('entries');
 
-  /// Parsed list for employer timesheet (same query as [fetchEntriesInRange]).
+  /// Timesheet stream — only entries in [trackedWorkspaces] for this employer.
   Stream<List<WorkEntry>> employeeEntriesForMonthStream(
+    String employerUid,
     String employeeUid,
     ReportPeriod period,
   ) {
-    return entriesInMonthSnapshots(employeeUid, period).map(
-      (snap) =>
-          snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList(),
+    late final StreamController<List<WorkEntry>> controller;
+    StreamSubscription<List<TrackedWorkspaceAccess>>? accessSub;
+    final entrySubs =
+        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+
+    void tearEntrySubs() {
+      for (final s in entrySubs) {
+        s.cancel();
+      }
+      entrySubs.clear();
+    }
+
+    void attachForWorkspaces(Set<String> allowed) {
+      tearEntrySubs();
+      if (allowed.isEmpty) {
+        if (!controller.isClosed) controller.add([]);
+        return;
+      }
+      final startTs = Timestamp.fromDate(period.start);
+      final endTs = Timestamp.fromDate(period.endInclusive);
+      final ref = _db
+          .collection('users')
+          .doc(employeeUid)
+          .collection('entries');
+      final chunks = _workspaceIdChunks(allowed);
+      final lists = List<List<WorkEntry>>.generate(
+        chunks.length,
+        (_) => <WorkEntry>[],
+      );
+      void emit() {
+        final merged = <WorkEntry>[for (final l in lists) ...l]
+          ..sort((a, b) => a.start.compareTo(b.start));
+        if (!controller.isClosed) controller.add(merged);
+      }
+
+      emit();
+      for (var i = 0; i < chunks.length; i++) {
+        final idx = i;
+        final chunk = chunks[i];
+        final sub = ref
+            .where('workspaceId', whereIn: chunk)
+            .where('start', isGreaterThanOrEqualTo: startTs)
+            .where('start', isLessThanOrEqualTo: endTs)
+            .snapshots()
+            .listen((snap) {
+              lists[idx] = snap.docs
+                  .map((d) => WorkEntry.fromDoc(d.id, d.data()))
+                  .toList();
+              emit();
+            }, onError: controller.addError);
+        entrySubs.add(sub);
+      }
+    }
+
+    controller = StreamController<List<WorkEntry>>.broadcast(
+      onListen: () {
+        accessSub = trackedWorkspaceAccessStream(employerUid).listen((
+          accessList,
+        ) {
+          final allowed = accessList
+              .where((a) => a.employeeUid == employeeUid.trim())
+              .map((a) => a.workspaceId)
+              .toSet();
+          attachForWorkspaces(allowed);
+        }, onError: controller.addError);
+      },
+      onCancel: () {
+        tearEntrySubs();
+        accessSub?.cancel();
+      },
     );
+    return controller.stream;
   }
 
   /// Alias for timesheet — entries whose `start` falls in [period].
   Future<List<WorkEntry>> fetchEmployeeEntriesForMonth(
+    String employerUid,
     String employeeUid,
     ReportPeriod period, {
     bool preferServer = false,
-  }) => fetchEntriesInRange(employeeUid, period, preferServer: preferServer);
+  }) => fetchEntriesInRangeForEmployer(
+    employerUid,
+    employeeUid,
+    period,
+    preferServer: preferServer,
+  );
 
   /// Creates a document under `users/{employeeUid}/entries`. Caller supplies a map that satisfies
   /// [firestore.rules] (e.g. `createdBy`, `createdVia: employer_panel`).
@@ -221,6 +691,15 @@ class FirestoreService {
     required String employeeUid,
     required Map<String, dynamic> data,
   }) async {
+    final ws = data['workspaceId'];
+    if (ws is! String || ws.trim().isEmpty) {
+      throw EmployerWorkspaceAccessException('workspaceId is required.');
+    }
+    if (!await employerCanAccessWorkspace(employerUid, employeeUid, ws)) {
+      throw EmployerWorkspaceAccessException(
+        'This workspace is not shared with your employer account.',
+      );
+    }
     await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
     final doc = _employeeEntries(employeeUid).doc();
     await doc.set(data);
@@ -231,7 +710,27 @@ class FirestoreService {
     required String employeeUid,
     required String entryId,
     required Map<String, dynamic> data,
+    String? employerUid,
   }) async {
+    if (employerUid != null) {
+      final cur = await _employeeEntries(employeeUid).doc(entryId).get();
+      final curData = cur.data();
+      final fromPatch = data['workspaceId'];
+      final targetWs = fromPatch is String ? fromPatch.trim() : '';
+      final effectiveWs = targetWs.isNotEmpty
+          ? targetWs
+          : ((curData?['workspaceId'] as String?)?.trim() ?? '');
+      if (effectiveWs.isEmpty ||
+          !await employerCanAccessWorkspace(
+            employerUid,
+            employeeUid,
+            effectiveWs,
+          )) {
+        throw EmployerWorkspaceAccessException(
+          'This workspace is not shared with your employer account.',
+        );
+      }
+    }
     await _employeeEntries(employeeUid).doc(entryId).update(data);
   }
 
@@ -240,10 +739,18 @@ class FirestoreService {
     required String employeeUid,
     required String entryId,
   }) async {
+    final doc = await _employeeEntries(employeeUid).doc(entryId).get();
+    final ws = (doc.data()?['workspaceId'] as String?)?.trim() ?? '';
+    if (!await employerCanAccessWorkspace(employerUid, employeeUid, ws)) {
+      throw EmployerWorkspaceAccessException(
+        'Cannot delete an entry outside shared workspaces.',
+      );
+    }
     await updateEmployeeEntry(
       employeeUid: employeeUid,
       entryId: entryId,
       data: employerEntrySoftDeletePatch(employerUid),
+      employerUid: employerUid,
     );
   }
 
@@ -252,10 +759,18 @@ class FirestoreService {
     required String employeeUid,
     required String entryId,
   }) async {
+    final doc = await _employeeEntries(employeeUid).doc(entryId).get();
+    final ws = (doc.data()?['workspaceId'] as String?)?.trim() ?? '';
+    if (!await employerCanAccessWorkspace(employerUid, employeeUid, ws)) {
+      throw EmployerWorkspaceAccessException(
+        'Cannot restore an entry outside shared workspaces.',
+      );
+    }
     await updateEmployeeEntry(
       employeeUid: employeeUid,
       entryId: entryId,
       data: employerEntryRestorePatch(employerUid),
+      employerUid: employerUid,
     );
   }
 
@@ -341,20 +856,36 @@ class FirestoreService {
 
   Future<void> removeTrackedEmployee(
     String employerUid,
-    String trackedId,
-  ) async {
+    String trackedId, {
+    required String employerEmail,
+  }) async {
+    final employerDomain = emailDomain(employerEmail);
+    final employerEmailLower = employerEmail.trim().toLowerCase();
     final ref = _employerTracked(employerUid).doc(trackedId);
     final snap = await ref.get();
     final removedUid = snap.data()?['employeeUid'] as String?;
     await ref.delete();
     if (removedUid != null && removedUid.trim().isNotEmpty) {
-      final others = await _employerTracked(
-        employerUid,
-      ).where('employeeUid', isEqualTo: removedUid).limit(1).get();
-      if (others.docs.isEmpty) {
-        await _employerTrackedEmployeeUids(
+      if (employerDomain != null) {
+        await _syncTrackedWorkspacesForEmployeeUid(
+          employerUid: employerUid,
+          employeeUid: removedUid.trim(),
+          employerEmailLower: employerEmailLower,
+          employerDomain: employerDomain,
+        );
+      } else {
+        final others = await _employerTracked(
           employerUid,
-        ).doc(removedUid.trim()).delete();
+        ).where('employeeUid', isEqualTo: removedUid).limit(1).get();
+        if (others.docs.isEmpty) {
+          await _deleteAllTrackedWorkspacesForEmployee(
+            employerUid,
+            removedUid.trim(),
+          );
+          await _employerTrackedEmployeeUids(
+            employerUid,
+          ).doc(removedUid.trim()).delete();
+        }
       }
     }
   }
@@ -516,15 +1047,73 @@ class FirestoreService {
     }
   }
 
+  /// Last activity among entries the employer may see (`trackedWorkspaces`).
+  Future<DateTime?> fetchLastActivityAtForEmployer(
+    String employerUid,
+    String employeeUid, {
+    bool preferServer = false,
+  }) async {
+    final allowed = await trackedWorkspaceIdsForEmployee(
+      employerUid,
+      employeeUid,
+    );
+    if (allowed.isEmpty) return null;
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
+    DateTime? best;
+    final entriesCol = _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('entries');
+    for (final wid in allowed) {
+      try {
+        final snap = await entriesCol
+            .where('workspaceId', isEqualTo: wid)
+            .where('isDeleted', isEqualTo: false)
+            .orderBy('updatedAt', descending: true)
+            .limit(1)
+            .get(opts);
+        if (snap.docs.isEmpty) continue;
+        final e = WorkEntry.fromDoc(snap.docs.first.id, snap.docs.first.data());
+        final ts = e.updatedAt ?? e.start;
+        if (best == null || ts.isAfter(best)) best = ts;
+      } catch (_) {
+        final snap = await entriesCol
+            .where('workspaceId', isEqualTo: wid)
+            .orderBy('start', descending: true)
+            .limit(40)
+            .get(opts);
+        for (final d in snap.docs) {
+          final e = WorkEntry.fromDoc(d.id, d.data());
+          if (e.isDeleted) continue;
+          final ts = e.updatedAt ?? e.start;
+          if (best == null || ts.isAfter(best)) best = ts;
+        }
+      }
+    }
+    return best;
+  }
+
   /// **MVP:** Employer may update billing fields on the employee workspace document.
   /// **TODO (mobile):** Firestore is source of truth; ensure the mobile client merges server writes
   /// instead of overwriting with stale local cache after employer edits.
   Future<void> updateWorkspaceBilling({
+    required String employerUid,
     required String employeeUid,
     required String workspaceId,
     required double hourlyRate,
     required String currency,
   }) async {
+    if (!await employerCanAccessWorkspace(
+      employerUid,
+      employeeUid,
+      workspaceId,
+    )) {
+      throw EmployerWorkspaceAccessException(
+        'This workspace is not shared with your employer account.',
+      );
+    }
     if (hourlyRate < 0 || hourlyRate > 99999) {
       throw WorkspaceBillingException('Rate must be between 0 and 99,999.');
     }
@@ -545,6 +1134,20 @@ class FirestoreService {
           'currency': c,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+  }
+
+  Future<void> _maybeRevokeTrackedEmployeeUidIfUnused(
+    String employerUid,
+    String employeeUid,
+  ) async {
+    final uid = employeeUid.trim();
+    if (uid.isEmpty) return;
+    final q = await _employerTracked(
+      employerUid,
+    ).where('employeeUid', isEqualTo: uid).limit(1).get();
+    if (q.docs.isEmpty) {
+      await _employerTrackedEmployeeUids(employerUid).doc(uid).delete();
+    }
   }
 
   /// Validates domain + workspace match (company/slug only — not names), then writes `trackedEmployees`.
@@ -568,64 +1171,104 @@ class FirestoreService {
       throw EmployerLinkException('No shared project found for this company');
     }
 
+    final employerEmailLower = employerEmail.trim().toLowerCase();
+
     final index = await getUserEmailIndex(employeeEmailLower);
     if (index == null || index.uid.isEmpty) {
       throw EmployerLinkException('Employee not found');
     }
 
-    final workspaces = await fetchEmployeeWorkspaces(index.uid);
-    Workspace? matched;
-    for (final w in workspaces) {
-      final wEmail = w.employeeWorkEmail?.trim().toLowerCase();
-      final wSlug = (w.companySlug ?? '').trim().toLowerCase();
-      if (wEmail == employeeEmailLower && wSlug == normalizedSlug) {
-        matched = w;
-        break;
+    final employeeUid = index.uid.trim();
+    await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
+
+    try {
+      final workspaces = await fetchEmployeeWorkspaces(employeeUid);
+
+      final qualifyingForSlug = workspaces.where((w) {
+        if ((w.companySlug ?? '').trim().toLowerCase() != normalizedSlug) {
+          return false;
+        }
+        return twp.workspaceQualifiesForEmployerPanel(
+          w: w,
+          employeeEmailLower: employeeEmailLower,
+          employerDomain: employerDomain,
+          normalizedCompanySlug: normalizedSlug,
+          employerEmailLower: employerEmailLower,
+        );
+      }).toList();
+
+      if (qualifyingForSlug.isEmpty) {
+        throw EmployerLinkException('No shared project found for this company');
       }
-    }
 
-    if (matched == null) {
-      throw EmployerLinkException('No shared project found for this company');
-    }
-
-    final wsDomain = matched.employeeWorkEmailDomain?.trim().toLowerCase();
-    if (wsDomain == null || wsDomain.isEmpty || wsDomain != employerDomain) {
-      throw EmployerLinkException(
-        'Employer email domain does not match employee work email domain',
-      );
-    }
-
-    final existing = await _employerTracked(employerUid)
-        .where('employeeUid', isEqualTo: index.uid)
-        .where('companySlug', isEqualTo: normalizedSlug)
-        .limit(1)
-        .get();
-
-    if (existing.docs.isNotEmpty) {
-      final doc = existing.docs.first;
-      final patch = _personalEmployeePatchFromIndex(index, doc.data());
-      if (patch.isNotEmpty) {
-        await doc.reference.update(patch);
+      final matched = qualifyingForSlug.first;
+      final wsDomain = matched.employeeWorkEmailDomain?.trim().toLowerCase();
+      if (wsDomain == null || wsDomain.isEmpty || wsDomain != employerDomain) {
+        throw EmployerLinkException(
+          'Employer email domain does not match employee work email domain',
+        );
       }
-      await _setTrackedEmployeeUidAccess(employerUid, index.uid.trim());
-      throw EmployerLinkException(
-        'This employee is already on your list for this company.',
-      );
-    }
 
-    await _employerTracked(employerUid).add({
-      ..._personalEmployeeWriteMap(
-        index,
-        employeeEmailFallback: employeeWorkEmailInput.trim(),
-        emailLowerFallback: employeeEmailLower,
-      ),
-      'companyName': matched.companyName ?? companyNameInput.trim(),
-      'companySlug': normalizedSlug,
-      'addedAt': FieldValue.serverTimestamp(),
-      'groupIds': <String>[],
-    });
-    await _setTrackedEmployeeUidAccess(employerUid, index.uid.trim());
+      final existing = await _employerTracked(employerUid)
+          .where('employeeUid', isEqualTo: employeeUid)
+          .where('companySlug', isEqualTo: normalizedSlug)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        final doc = existing.docs.first;
+        final patch = _personalEmployeePatchFromIndex(index, doc.data());
+        if (patch.isNotEmpty) {
+          await doc.reference.update(patch);
+        }
+        await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
+        await _syncTrackedWorkspacesForEmployeeUid(
+          employerUid: employerUid,
+          employeeUid: employeeUid,
+          employerEmailLower: employerEmailLower,
+          employerDomain: employerDomain,
+        );
+        throw EmployerLinkException(
+          'This employee is already on your list for this company.',
+        );
+      }
+
+      await _employerTracked(employerUid).add({
+        ..._personalEmployeeWriteMap(
+          index,
+          employeeEmailFallback: employeeWorkEmailInput.trim(),
+          emailLowerFallback: employeeEmailLower,
+        ),
+        'companyName': matched.companyName ?? companyNameInput.trim(),
+        'companySlug': normalizedSlug,
+        'addedAt': FieldValue.serverTimestamp(),
+        'groupIds': <String>[],
+      });
+      await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
+      await _syncTrackedWorkspacesForEmployeeUid(
+        employerUid: employerUid,
+        employeeUid: employeeUid,
+        employerEmailLower: employerEmailLower,
+        employerDomain: employerDomain,
+      );
+    } catch (e) {
+      final dup =
+          e is EmployerLinkException &&
+          e.message.contains('already on your list');
+      if (!dup) {
+        await _maybeRevokeTrackedEmployeeUidIfUnused(employerUid, employeeUid);
+      }
+      rethrow;
+    }
   }
+}
+
+class EmployerWorkspaceAccessException implements Exception {
+  EmployerWorkspaceAccessException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class EmployerLinkException implements Exception {

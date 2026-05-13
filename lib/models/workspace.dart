@@ -13,6 +13,8 @@ class Workspace extends Equatable {
     this.currency,
     this.colorHex,
     this.isArchived = false,
+    this.isSharedWithEmployer,
+    this.linkedEmployerEmails,
     this.createdAt,
     this.updatedAt,
   });
@@ -27,6 +29,12 @@ class Workspace extends Equatable {
   final String? currency;
   final String? colorHex;
   final bool isArchived;
+
+  /// When true, employee workspace may appear in employer panel after link/rebuild.
+  final bool? isSharedWithEmployer;
+
+  /// Optional explicit allow-list (lowercase emails); when empty/null, slug/domain rules apply only.
+  final List<String>? linkedEmployerEmails;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -44,6 +52,8 @@ class Workspace extends Equatable {
           : data['currencyCode'] as String?,
       colorHex: data['colorHex'] as String?,
       isArchived: data['isArchived'] as bool? ?? false,
+      isSharedWithEmployer: data['isSharedWithEmployer'] as bool?,
+      linkedEmployerEmails: _strList(data['linkedEmployerEmails']),
       createdAt: _ts(data['createdAt']),
       updatedAt: _ts(data['updatedAt']),
     );
@@ -52,6 +62,18 @@ class Workspace extends Equatable {
   static DateTime? _ts(dynamic v) {
     if (v is Timestamp) return v.toDate();
     return null;
+  }
+
+  static List<String>? _strList(dynamic v) {
+    if (v == null) return null;
+    if (v is! List) return null;
+    final out = <String>[];
+    for (final e in v) {
+      if (e == null) continue;
+      final s = e.toString().trim().toLowerCase();
+      if (s.isNotEmpty) out.add(s);
+    }
+    return out.isEmpty ? null : out;
   }
 
   @override

@@ -6,6 +6,7 @@ import '../../../services/firestore_service.dart';
 /// Edit [Workspace.hourlyRate] and [Workspace.currency] (Firestore source of truth for MVP).
 Future<void> showEditWorkspaceBillingDialog(
   BuildContext context, {
+  required String employerUid,
   required FirestoreService firestore,
   required String employeeUid,
   required Workspace workspace,
@@ -35,6 +36,7 @@ Future<void> showEditWorkspaceBillingDialog(
             setLocal(() => error = null);
             try {
               await firestore.updateWorkspaceBilling(
+                employerUid: employerUid,
                 employeeUid: employeeUid,
                 workspaceId: workspace.id,
                 hourlyRate: parsed,

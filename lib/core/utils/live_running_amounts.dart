@@ -87,11 +87,15 @@ String _pickCurrency(EmployeeLiveStatus live, Map<String, Workspace> wsMap) {
 }
 
 /// One row per running [employeeUid] (avoids double-counting duplicate tracked rows).
+///
+/// When [allowedWorkspaceIdsByEmployeeUid] contains [employeeUid], live money is counted only
+/// if [EmployeeLiveStatus.activeWorkspaceId] is in that set (private/other workspace → no amount).
 LiveRunningMoneySummary computeLiveRunningMoneySummary({
   required List<TrackedEmployee> tracked,
   required Map<String, EmployeeLiveStatus?> liveByEmployeeUid,
   required Map<String, Map<String, Workspace>> workspaceMapsByEmployeeUid,
   required DateTime at,
+  Map<String, Set<String>> allowedWorkspaceIdsByEmployeeUid = const {},
 }) {
   final out = <String, double>{};
   var missingRate = false;
@@ -106,6 +110,14 @@ LiveRunningMoneySummary computeLiveRunningMoneySummary({
     if (live.timerStateLower != 'running') continue;
     if (seenRunning.contains(uid)) continue;
     seenRunning.add(uid);
+
+    if (allowedWorkspaceIdsByEmployeeUid.containsKey(uid)) {
+      final allowed = allowedWorkspaceIdsByEmployeeUid[uid] ?? {};
+      final activeId = live.activeWorkspaceId?.trim() ?? '';
+      if (activeId.isEmpty || !allowed.contains(activeId)) {
+        continue;
+      }
+    }
 
     final wsMap =
         workspaceMapsByEmployeeUid[uid] ?? const <String, Workspace>{};
@@ -148,11 +160,13 @@ Map<String, double> liveRunningAmountByCurrency({
   required Map<String, EmployeeLiveStatus?> liveByEmployeeUid,
   required Map<String, Map<String, Workspace>> workspaceMapsByEmployeeUid,
   required DateTime at,
+  Map<String, Set<String>> allowedWorkspaceIdsByEmployeeUid = const {},
 }) {
   return computeLiveRunningMoneySummary(
     tracked: tracked,
     liveByEmployeeUid: liveByEmployeeUid,
     workspaceMapsByEmployeeUid: workspaceMapsByEmployeeUid,
     at: at,
+    allowedWorkspaceIdsByEmployeeUid: allowedWorkspaceIdsByEmployeeUid,
   ).byCurrency;
 }

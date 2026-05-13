@@ -4,9 +4,20 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/theme_controller.dart';
+import '../../services/firestore_service.dart';
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key, required this.firestore});
+
+  final FirestoreService firestore;
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _rebuilding = false;
+  String? _rebuildMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +82,97 @@ class SettingsScreen extends StatelessWidget {
                           if (set.isEmpty) return;
                           context.read<ThemeController>().setMode(set.first);
                         },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Workspace access',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Rebuild `trackedWorkspaces` from each linked employee’s shared '
+                        'workspaces (isSharedWithEmployer, company slug, domain). '
+                        'Run after deploying the new access model or when data looks wrong.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                      ),
+                      if (_rebuildMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _rebuildMessage!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      FilledButton.tonalIcon(
+                        onPressed: _rebuilding || user?.uid == null
+                            ? null
+                            : () async {
+                                final email = user?.email ?? '';
+                                if (email.isEmpty) {
+                                  setState(() {
+                                    _rebuildMessage =
+                                        'Signed-in user has no email; cannot rebuild.';
+                                  });
+                                  return;
+                                }
+                                setState(() {
+                                  _rebuilding = true;
+                                  _rebuildMessage = null;
+                                });
+                                try {
+                                  final n = await widget.firestore
+                                      .rebuildTrackedWorkspaceAccess(
+                                        employerUid: user!.uid,
+                                        employerEmail: email,
+                                        preferServer: true,
+                                      );
+                                  if (mounted) {
+                                    setState(() {
+                                      _rebuildMessage =
+                                          'Done. Matched $n workspace link(s) '
+                                          '(rows considered before de-duplication by employee).';
+                                    });
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _rebuildMessage = 'Rebuild failed: $e';
+                                    });
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _rebuilding = false);
+                                  }
+                                }
+                              },
+                        icon: _rebuilding
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cleaning_services_outlined),
+                        label: Text(
+                          _rebuilding
+                              ? 'Rebuilding…'
+                              : 'Rebuild workspace access',
+                        ),
                       ),
                     ],
                   ),

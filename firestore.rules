@@ -9,9 +9,9 @@ rules_version = '2';
 // - `userEmailIndex/{emailLower}` below allows read for any authenticated user (`request.auth != null`).
 //   In production, restrict reads e.g. to employers who have linked the employee, or serve lookups
 //   only via Cloud Functions, so the index is not enumerable by arbitrary signed-in clients.
-// - Employer access to `users/{employeeUid}/...` is gated here by `trackedEmployeeUids/{employeeUid}`.
-//   Keep that collection accurate when adding/removing tracked employees so employers only read
-//   data for people they actually track. See DATA_CONTRACT.md for path overview.
+// - Employer access to `users/{employeeUid}/...` uses `trackedWorkspaces` for entries and
+//   workspace reads when `isSharedWithEmployer` is set; `trackedEmployeeUids` remains for
+//   live/status and bootstrap listing. See DATA_CONTRACT.md.
 //
 // MVP frontend assumes these collections/paths:
 // - userEmailIndex/{emailLower}
@@ -20,6 +20,7 @@ rules_version = '2';
 // - users/{uid}/live/status
 // - employers/{employerUid}/trackedEmployees/{id}
 // - employers/{employerUid}/trackedEmployeeUids/{employeeUid}
+// - employers/{employerUid}/trackedWorkspaces/{accessId}
 // - employers/{employerUid}/groups/{groupId}
 
 service cloud.firestore {
@@ -28,6 +29,18 @@ service cloud.firestore {
     function employerTracksUser(employeeUid) {
       return request.auth != null &&
         exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedEmployeeUids/$(employeeUid));
+    }
+
+    function employerHasTrackedWorkspace(employeeUid, workspaceId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedWorkspaces/$(employeeUid + '_' + workspaceId));
+    }
+
+    function sharedWorkspaceEmployerListReadOk(userId) {
+      return employerTracksUser(userId) && (
+        !('isSharedWithEmployer' in resource.data) ||
+        resource.data.isSharedWithEmployer == true
+      );
     }
 
     // Employer panel may create/update time entries (soft delete via isDeleted); no hard deletes.
@@ -94,16 +107,21 @@ service cloud.firestore {
         allow write: if false;
       }
       match /workspaces/{wid} {
-        allow read: if employerTracksUser(userId);
+        allow read: if request.auth.uid == userId ||
+          employerHasTrackedWorkspace(userId, wid) ||
+          sharedWorkspaceEmployerListReadOk(userId);
         allow write: if false;
       }
       match /entries/{eid} {
         allow read: if request.auth != null &&
-          (request.auth.uid == userId || employerTracksUser(userId));
+          (request.auth.uid == userId ||
+            employerHasTrackedWorkspace(userId, resource.data.workspaceId));
         allow create: if employeeOwnTimeEntryWrite() ||
-          (employerTracksUser(userId) && employerEntryCreateValid());
+          (employerHasTrackedWorkspace(userId, request.resource.data.workspaceId) &&
+            employerEntryCreateValid());
         allow update: if employeeOwnTimeEntryWrite() ||
-          (employerTracksUser(userId) && employerEntryUpdateValid());
+          (employerHasTrackedWorkspace(userId, request.resource.data.workspaceId) &&
+            employerEntryUpdateValid());
         allow delete: if false;
       }
       match /{document=**} {
@@ -115,6 +133,22 @@ service cloud.firestore {
     match /userEmailIndex/{email} {
       allow read: if request.auth != null;
       allow write: if false;
+    }
+
+    match /employers/{employerId}/trackedWorkspaces/{accessId} {
+      allow read: if request.auth != null && request.auth.uid == employerId;
+      allow create, update: if request.auth != null && request.auth.uid == employerId &&
+        request.resource.data.employeeUid is string &&
+        request.resource.data.workspaceId is string &&
+        request.resource.data.employeeUid.size() > 0 &&
+        request.resource.data.workspaceId.size() > 0 &&
+        accessId == request.resource.data.employeeUid + '_' + request.resource.data.workspaceId &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)) &&
+        (
+          !('isSharedWithEmployer' in get(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)).data) ||
+          get(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)).data.isSharedWithEmployer == true
+        );
+      allow delete: if request.auth != null && request.auth.uid == employerId;
     }
 
     match /employers/{employerId}/trackedEmployees/{tid} {

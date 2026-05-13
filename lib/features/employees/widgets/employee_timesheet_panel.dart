@@ -201,9 +201,8 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
             if (wsEmpty)
               AppEmptyState(
                 icon: Icons.workspaces_outlined,
-                title: 'This employee has no workspaces',
-                subtitle:
-                    'In this company scope there are no projects — timesheet is unavailable.',
+                title: 'No shared workspaces',
+                subtitle: 'No shared workspaces available for this employee.',
               )
             else ...[
               _monthNav(context),
@@ -215,6 +214,7 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
                   '${_period.start.toIso8601String()}_${widget.employeeUid}',
                 ),
                 stream: widget.firestore.employeeEntriesForMonthStream(
+                  widget.employerUid,
                   widget.employeeUid,
                   _period,
                 ),

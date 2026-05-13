@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -104,8 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _hadFirstStatsPostFrame = false;
   String _lastStatsTrackedIdsPostFrame = '';
 
-  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
-  _monthEntrySubs = [];
+  final List<StreamSubscription<void>> _monthEntrySubs = [];
   String _monthEntryListenUidSig = '';
   Timer? _entriesDebounceTimer;
 
@@ -145,7 +143,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _statsPostFrameScheduled = false;
     if (!mounted) return;
     final tracked = _pendingStatsTracked;
-    _ensureMonthEntryListeners(tracked);
+    final employerUid = FirebaseAuth.instance.currentUser?.uid;
+    if (employerUid != null) {
+      _ensureMonthEntryListeners(tracked, employerUid);
+    }
     final reason = _postFrameStatsReason(tracked);
     _syncStatsIfNeeded(tracked, reason: reason);
   }
@@ -177,7 +178,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return r;
   }
 
-  void _ensureMonthEntryListeners(List<TrackedEmployee> tracked) {
+  void _ensureMonthEntryListeners(
+    List<TrackedEmployee> tracked,
+    String employerUid,
+  ) {
     final period = _thisMonth;
     final monthKey =
         '${period.start.year}-${period.start.month.toString().padLeft(2, '0')}';
@@ -188,7 +192,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             .toSet()
             .toList()
           ..sort();
-    final sig = '$monthKey|${uids.join('|')}';
+    final sig = '$monthKey|$employerUid|${uids.join('|')}';
     if (sig == _monthEntryListenUidSig) return;
     _monthEntryListenUidSig = sig;
     _entriesDebounceTimer?.cancel();
@@ -199,7 +203,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (uids.isEmpty) return;
     for (final uid in uids) {
       final sub = widget.firestore
-          .entriesInMonthSnapshots(uid, period)
+          .entriesMonthTouchSignalsForEmployer(employerUid, uid, period)
           .skip(1)
           .listen((_) {
             _scheduleStatsReloadFromFirestoreEntries();
@@ -323,6 +327,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       const preferServer = true;
       final period = _thisMonth;
+      final employerUid = FirebaseAuth.instance.currentUser?.uid;
+      if (employerUid == null) {
+        return _DashboardSnapshot.empty();
+      }
       double totalHours = 0;
       final amountByCurrency = <String, double>{};
       final lastByTracked = <String, DateTime?>{};
@@ -330,7 +338,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final lastTimes = await Future.wait(
         tracked.map(
-          (t) => widget.firestore.fetchLastActivityAt(
+          (t) => widget.firestore.fetchLastActivityAtForEmployer(
+            employerUid,
             t.employeeUid,
             preferServer: preferServer,
           ),
@@ -341,19 +350,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       for (final t in tracked) {
-        final entries = await widget.firestore.fetchEntriesInRange(
+        final entries = await widget.firestore.fetchEntriesInRangeForEmployer(
+          employerUid,
           t.employeeUid,
           period,
           preferServer: preferServer,
         );
-        final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
-          t.employeeUid,
-          preferServer: preferServer,
-        );
+        final workspaces = await widget.firestore
+            .fetchEmployeeWorkspacesForEmployer(
+              employerUid,
+              t.employeeUid,
+              preferServer: preferServer,
+            );
         final wsMap = {for (final w in workspaces) w.id: w};
         workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
         final filtered = entries.where((e) {
           if (e.isDeleted || e.end == null) return false;
+          if (wsMap[e.workspaceId] == null) return false;
           if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() !=
               t.companySlug.toLowerCase()) {
             return false;
@@ -646,6 +659,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 final monthLoading = _statsFirstLoadSpinner(
                                   snap,
                                 );
+                                final gate = <String, Set<String>>{
+                                  for (final t in tracked)
+                                    if (t.employeeUid.trim().isNotEmpty)
+                                      t.employeeUid.trim():
+                                          stats
+                                              .workspaceMapsByEmployeeUid[t
+                                                  .employeeUid
+                                                  .trim()]
+                                              ?.keys
+                                              .toSet() ??
+                                          {},
+                                };
                                 LiveRunningMoneySummary liveSummary;
                                 try {
                                   liveSummary = computeLiveRunningMoneySummary(
@@ -654,6 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     workspaceMapsByEmployeeUid:
                                         stats.workspaceMapsByEmployeeUid,
                                     at: DateTime.now(),
+                                    allowedWorkspaceIdsByEmployeeUid: gate,
                                   );
                                 } catch (e, st) {
                                   if (kDebugMode) {

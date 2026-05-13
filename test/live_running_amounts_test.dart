@@ -99,6 +99,41 @@ void main() {
       expect(summary.hasRunningWithoutRate, false);
     });
 
+    test('live amount skipped when active workspace not in employer gate', () {
+      const uid = 'emp1';
+      final live = EmployeeLiveStatus(
+        timerState: 'running',
+        activeWorkspaceId: 'private_ws',
+        accumulatedSecondsBeforePause: 0,
+        sessionStartedAt: DateTime(2026, 5, 1, 10, 0, 0),
+        billingRatePercent: 100,
+        hourlyRate: 100,
+        currency: 'PLN',
+      );
+      final at = DateTime(2026, 5, 1, 11, 0, 0);
+      final summary = computeLiveRunningMoneySummary(
+        tracked: [_t(uid)],
+        liveByEmployeeUid: {uid: live},
+        workspaceMapsByEmployeeUid: {
+          uid: {
+            'shared': const Workspace(
+              id: 'shared',
+              name: 'Shared',
+              companySlug: 'co',
+              hourlyRate: 60,
+              currency: 'PLN',
+            ),
+          },
+        },
+        at: at,
+        allowedWorkspaceIdsByEmployeeUid: {
+          uid: {'shared'},
+        },
+      );
+      expect(summary.byCurrency, isEmpty);
+      expect(summary.hasRunningWithoutRate, false);
+    });
+
     test('displayValue No rate when running without amount', () {
       const s = LiveRunningMoneySummary(
         byCurrency: {},
