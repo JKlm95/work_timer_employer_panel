@@ -114,8 +114,12 @@ class FirestoreService {
   }
 
   /// Reads employee workspaces — sensitive; gated by rules in production.
-  Future<List<Workspace>> fetchEmployeeWorkspaces(String employeeUid) async {
-    final snap = await _db.collection('users').doc(employeeUid).collection('workspaces').get();
+  Future<List<Workspace>> fetchEmployeeWorkspaces(
+    String employeeUid, {
+    bool preferServer = false,
+  }) async {
+    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
+    final snap = await _db.collection('users').doc(employeeUid).collection('workspaces').get(opts);
     return snap.docs.map((d) => Workspace.fromDoc(d.id, d.data())).toList();
   }
 
@@ -124,16 +128,34 @@ class FirestoreService {
   /// Composite index may be required: `entries` collection — `start` ASC + optional filters.
   Future<List<WorkEntry>> fetchEntriesInRange(
     String employeeUid,
-    ReportPeriod period,
-  ) async {
+    ReportPeriod period, {
+    bool preferServer = false,
+  }) async {
     final startTs = Timestamp.fromDate(period.start);
     final endTs = Timestamp.fromDate(period.endInclusive);
     final ref = _db.collection('users').doc(employeeUid).collection('entries');
     Query<Map<String, dynamic>> q = ref
         .where('start', isGreaterThanOrEqualTo: startTs)
         .where('start', isLessThanOrEqualTo: endTs);
-    final snap = await q.get();
+    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
+    final snap = await q.get(opts);
     return snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList();
+  }
+
+  /// Live updates when any entry in [period] (by `start`) changes for [employeeUid].
+  Stream<QuerySnapshot<Map<String, dynamic>>> entriesInMonthSnapshots(
+    String employeeUid,
+    ReportPeriod period,
+  ) {
+    final startTs = Timestamp.fromDate(period.start);
+    final endTs = Timestamp.fromDate(period.endInclusive);
+    return _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('entries')
+        .where('start', isGreaterThanOrEqualTo: startTs)
+        .where('start', isLessThanOrEqualTo: endTs)
+        .snapshots();
   }
 
   /// Each emission re-reads `userEmailIndex/{employeeEmailLower}` so names stay in sync with mobile
@@ -325,7 +347,11 @@ class FirestoreService {
   }
 
   /// Prefer `updatedAt`, fallback `start`, on newest non-deleted entry.
-  Future<DateTime?> fetchLastActivityAt(String employeeUid) async {
+  Future<DateTime?> fetchLastActivityAt(
+    String employeeUid, {
+    bool preferServer = false,
+  }) async {
+    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
     try {
       final snap = await _db
           .collection('users')
@@ -334,7 +360,7 @@ class FirestoreService {
           .where('isDeleted', isEqualTo: false)
           .orderBy('updatedAt', descending: true)
           .limit(1)
-          .get();
+          .get(opts);
       if (snap.docs.isEmpty) return null;
       final e = WorkEntry.fromDoc(snap.docs.first.id, snap.docs.first.data());
       return e.updatedAt ?? e.start;
@@ -345,7 +371,7 @@ class FirestoreService {
           .collection('entries')
           .orderBy('start', descending: true)
           .limit(40)
-          .get();
+          .get(opts);
       DateTime? best;
       for (final d in snap.docs) {
         final e = WorkEntry.fromDoc(d.id, d.data());

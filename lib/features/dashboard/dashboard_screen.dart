@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -68,6 +69,8 @@ int _countWorkingNow(List<TrackedEmployee> tracked, Map<String, EmployeeLiveStat
   return n;
 }
 
+enum _DashboardStatsRefreshReason { initial, manual, auto, trackedChanged }
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, required this.firestore});
 
@@ -92,6 +95,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<TrackedEmployee> _pendingStatsTracked = [];
   bool _statsPostFrameScheduled = false;
 
+  bool _hadFirstStatsPostFrame = false;
+  String _lastStatsTrackedIdsPostFrame = '';
+
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> _monthEntrySubs = [];
+  String _monthEntryListenUidSig = '';
+  Timer? _entriesDebounceTimer;
+
   @override
   void initState() {
     super.initState();
@@ -101,13 +111,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _refreshNonce++;
         _statsSig = '';
       });
-      _syncStatsIfNeeded(_latestTracked);
+      _syncStatsIfNeeded(_latestTracked, reason: _DashboardStatsRefreshReason.auto);
     });
   }
 
   @override
   void dispose() {
     _autoStatsTimer?.cancel();
+    _entriesDebounceTimer?.cancel();
+    for (final s in _monthEntrySubs) {
+      s.cancel();
+    }
+    _monthEntrySubs.clear();
     super.dispose();
   }
 
@@ -116,7 +131,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onPostFrameSyncStats(Duration _) {
     _statsPostFrameScheduled = false;
     if (!mounted) return;
-    _syncStatsIfNeeded(_pendingStatsTracked);
+    final tracked = _pendingStatsTracked;
+    _ensureMonthEntryListeners(tracked);
+    final reason = _postFrameStatsReason(tracked);
+    _syncStatsIfNeeded(tracked, reason: reason);
   }
 
   /// Do not call from [build] synchronously — it ends in [setState]. Use post-frame scheduling.
@@ -127,20 +145,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback(_onPostFrameSyncStats);
   }
 
-  void _syncStatsIfNeeded(List<TrackedEmployee> tracked) {
+  _DashboardStatsRefreshReason _postFrameStatsReason(List<TrackedEmployee> tracked) {
+    final idKey = tracked.isEmpty ? '__empty__' : tracked.map((e) => e.id).join('|');
+    final _DashboardStatsRefreshReason r;
+    if (!_hadFirstStatsPostFrame) {
+      _hadFirstStatsPostFrame = true;
+      r = _DashboardStatsRefreshReason.initial;
+    } else if (idKey != _lastStatsTrackedIdsPostFrame) {
+      r = _DashboardStatsRefreshReason.trackedChanged;
+    } else {
+      r = _DashboardStatsRefreshReason.trackedChanged;
+    }
+    _lastStatsTrackedIdsPostFrame = idKey;
+    return r;
+  }
+
+  void _ensureMonthEntryListeners(List<TrackedEmployee> tracked) {
+    final period = _thisMonth;
+    final monthKey = '${period.start.year}-${period.start.month.toString().padLeft(2, '0')}';
+    final uids = tracked.map((e) => e.employeeUid).where((u) => u.trim().isNotEmpty).toSet().toList()..sort();
+    final sig = '$monthKey|${uids.join('|')}';
+    if (sig == _monthEntryListenUidSig) return;
+    _monthEntryListenUidSig = sig;
+    _entriesDebounceTimer?.cancel();
+    for (final s in _monthEntrySubs) {
+      s.cancel();
+    }
+    _monthEntrySubs.clear();
+    if (uids.isEmpty) return;
+    for (final uid in uids) {
+      final sub = widget.firestore.entriesInMonthSnapshots(uid, period).skip(1).listen((_) {
+        _scheduleStatsReloadFromFirestoreEntries();
+      });
+      _monthEntrySubs.add(sub);
+    }
+  }
+
+  void _scheduleStatsReloadFromFirestoreEntries() {
+    if (!mounted) return;
+    _entriesDebounceTimer?.cancel();
+    _entriesDebounceTimer = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      setState(() {
+        _refreshNonce++;
+        _statsSig = '';
+      });
+      _syncStatsIfNeeded(_latestTracked, reason: _DashboardStatsRefreshReason.auto);
+    });
+  }
+
+  void _logStatsRefreshDebug(
+    _DashboardStatsRefreshReason reason,
+    List<TrackedEmployee> tracked,
+    Map<String, double> amountByCurrency,
+  ) {
+    if (!kDebugMode) return;
+    final sumNaive = amountByCurrency.values.fold<double>(0, (a, b) => a + b);
+    debugPrint(
+      '[Dashboard] stats refreshed reason=${reason.name} refreshNonce=$_refreshNonce '
+      'employees=${tracked.length} estimatedByCurrency=$amountByCurrency totalNaiveSum=${sumNaive.toStringAsFixed(2)}',
+    );
+  }
+
+  void _syncStatsIfNeeded(List<TrackedEmployee> tracked, {required _DashboardStatsRefreshReason reason}) {
     _latestTracked = tracked;
     if (tracked.isEmpty) {
       final sig = 'empty|$_refreshNonce';
       if (_statsSig == sig && _statsFuture != null) return;
       _statsSig = sig;
       _statsFuture = Future.value(_DashboardSnapshot.empty());
+      _logStatsRefreshDebug(reason, tracked, {});
       if (mounted) setState(() {});
       return;
     }
     final sig = '${tracked.map((e) => e.id).join('|')}|$_refreshNonce';
     if (_statsSig == sig && _statsFuture != null) return;
     _statsSig = sig;
-    _statsFuture = _loadDashboardSnapshot(tracked);
+    _statsFuture = _loadDashboardSnapshot(tracked, reason);
     if (mounted) setState(() {});
   }
 
@@ -154,7 +235,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _refreshNonce++;
         _statsSig = '';
       });
-      _syncStatsIfNeeded(tracked);
+      _syncStatsIfNeeded(tracked, reason: _DashboardStatsRefreshReason.manual);
       final f = _statsFuture;
       if (f != null) await f;
       if (mounted) setState(() => _lastStatsRefresh = DateTime.now());
@@ -163,8 +244,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<_DashboardSnapshot> _loadDashboardSnapshot(List<TrackedEmployee> tracked) async {
+  Future<_DashboardSnapshot> _loadDashboardSnapshot(
+    List<TrackedEmployee> tracked,
+    _DashboardStatsRefreshReason reason,
+  ) async {
     try {
+      const preferServer = true;
       final period = _thisMonth;
       double totalHours = 0;
       final amountByCurrency = <String, double>{};
@@ -172,15 +257,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final workspaceMapsByEmployeeUid = <String, Map<String, Workspace>>{};
 
       final lastTimes = await Future.wait(
-        tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid)),
+        tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid, preferServer: preferServer)),
       );
       for (var i = 0; i < tracked.length; i++) {
         lastByTracked[tracked[i].id] = lastTimes[i];
       }
 
       for (final t in tracked) {
-        final entries = await widget.firestore.fetchEntriesInRange(t.employeeUid, period);
-        final workspaces = await widget.firestore.fetchEmployeeWorkspaces(t.employeeUid);
+        final entries = await widget.firestore.fetchEntriesInRange(
+          t.employeeUid,
+          period,
+          preferServer: preferServer,
+        );
+        final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
+          t.employeeUid,
+          preferServer: preferServer,
+        );
         final wsMap = {for (final w in workspaces) w.id: w};
         workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
         final filtered = entries.where((e) {
@@ -197,6 +289,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
         money.forEach((k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v);
       }
+
+      _logStatsRefreshDebug(reason, tracked, amountByCurrency);
 
       return _DashboardSnapshot(
         totalHours: totalHours,
@@ -318,6 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 24),
                           FutureBuilder<_DashboardSnapshot>(
+                            key: ValueKey<(int, String)>((_refreshNonce, _statsSig)),
                             future: statsFuture,
                             builder: (context, snap) {
                               if (snap.hasError) {
@@ -484,6 +579,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                   )
                                 : FutureBuilder<_DashboardSnapshot>(
+                                    key: ValueKey<(int, String)>((_refreshNonce, _statsSig)),
                                     future: statsFuture,
                                     builder: (context, snap) {
                                       if (snap.hasError) {
