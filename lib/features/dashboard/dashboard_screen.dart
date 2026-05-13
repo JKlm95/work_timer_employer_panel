@@ -396,7 +396,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         debugPrint('[Dashboard] _loadDashboardSnapshot failed: $e');
         debugPrintStack(stackTrace: st, label: 'dashboard_stats');
       }
-      Error.throwWithStackTrace(e, st);
+      return _DashboardSnapshot.empty();
     }
   }
 

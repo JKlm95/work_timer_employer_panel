@@ -8,6 +8,7 @@ import '../core/utils/company_slug_utils.dart';
 import '../core/utils/employer_entry_soft_patch.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/employee_presence_utils.dart';
+import '../core/utils/employer_workspace_query_utils.dart';
 import '../core/utils/report_period.dart';
 import '../models/employee_live_status.dart';
 import '../models/employer_group.dart';
@@ -58,18 +59,19 @@ class FirestoreService {
       .doc(employerUid)
       .collection('trackedWorkspaces');
 
-  static List<List<String>> _workspaceIdChunks(
-    Iterable<String> ids, {
-    int max = 10,
+  void _logEmployerEntriesDebug(
+    String op, {
+    required String employerUid,
+    required String employeeUid,
+    required Set<String> workspaceIds,
+    required int chunkCount,
+    String? extra,
   }) {
-    final list = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
-      ..sort();
-    final chunks = <List<String>>[];
-    for (var i = 0; i < list.length; i += max) {
-      final end = i + max > list.length ? list.length : i + max;
-      chunks.add(list.sublist(i, end));
-    }
-    return chunks;
+    if (!kDebugMode) return;
+    debugPrint(
+      '[EmployerFS/$op] employer=$employerUid employee=$employeeUid '
+      'trackedWsCount=${workspaceIds.length} chunks=$chunkCount${extra != null ? ' $extra' : ''}',
+    );
   }
 
   /// Workspace-level access for this employer (real data scope for the panel).
@@ -77,19 +79,21 @@ class FirestoreService {
     String employerUid,
   ) async {
     final snap = await _employerTrackedWorkspaces(employerUid).get();
-    return snap.docs
+    final raw = snap.docs
         .map((d) => TrackedWorkspaceAccess.fromDoc(d.id, d.data()))
         .toList();
+    return dedupeTrackedWorkspaceAccessDocs(raw);
   }
 
   Stream<List<TrackedWorkspaceAccess>> trackedWorkspaceAccessStream(
     String employerUid,
   ) {
-    return _employerTrackedWorkspaces(employerUid).snapshots().map(
-      (s) => s.docs
+    return _employerTrackedWorkspaces(employerUid).snapshots().map((s) {
+      final raw = s.docs
           .map((d) => TrackedWorkspaceAccess.fromDoc(d.id, d.data()))
-          .toList(),
-    );
+          .toList();
+      return dedupeTrackedWorkspaceAccessDocs(raw);
+    });
   }
 
   Future<Set<String>> trackedWorkspaceIdsForEmployee(
@@ -98,10 +102,9 @@ class FirestoreService {
   ) async {
     final all = await fetchTrackedWorkspaces(employerUid);
     final uid = employeeUid.trim();
-    return all
-        .where((a) => a.employeeUid == uid)
-        .map((a) => a.workspaceId)
-        .toSet();
+    return normalizedWorkspaceIdSet(
+      all.where((a) => a.employeeUid == uid).map((a) => a.workspaceId),
+    );
   }
 
   Future<bool> employerCanAccessWorkspace(
@@ -329,20 +332,35 @@ class FirestoreService {
   }) async {
     final access = await fetchTrackedWorkspaces(employerUid);
     final uid = employeeUid.trim();
-    final mine = access.where((a) => a.employeeUid == uid).toList();
+    final mineByWs = <String, TrackedWorkspaceAccess>{};
+    for (final a in access.where((x) => x.employeeUid == uid)) {
+      final wid = a.workspaceId.trim();
+      if (wid.isEmpty) continue;
+      mineByWs.putIfAbsent(wid, () => a);
+    }
     final opts = GetOptions(
       source: preferServer ? Source.server : Source.serverAndCache,
     );
     final out = <Workspace>[];
-    for (final a in mine) {
-      final d = await _db
-          .collection('users')
-          .doc(uid)
-          .collection('workspaces')
-          .doc(a.workspaceId)
-          .get(opts);
-      if (d.exists && d.data() != null) {
-        out.add(Workspace.fromDoc(d.id, d.data()!));
+    for (final a in mineByWs.values) {
+      try {
+        final d = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('workspaces')
+            .doc(a.workspaceId.trim())
+            .get(opts);
+        if (d.exists && d.data() != null) {
+          out.add(Workspace.fromDoc(d.id, d.data()!));
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint(
+            '[EmployerFS/fetchWorkspace] employer=$employerUid employee=$uid '
+            'workspaceId=${a.workspaceId} err=$e',
+          );
+          debugPrintStack(stackTrace: st, label: 'employer_fetch_workspace');
+        }
       }
     }
     out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -486,7 +504,37 @@ class FirestoreService {
       employerUid,
       employeeUid,
     );
-    if (allowed.isEmpty) return [];
+    if (allowed.isEmpty) {
+      if (kDebugMode) {
+        _logEmployerEntriesDebug(
+          'fetchEntries SKIP',
+          employerUid: employerUid,
+          employeeUid: employeeUid,
+          workspaceIds: allowed,
+          chunkCount: 0,
+          extra: 'workspaceIds empty',
+        );
+      }
+      return [];
+    }
+    final chunks = workspaceIdChunksForWhereIn(allowed);
+    if (chunks.isEmpty) {
+      if (kDebugMode) {
+        debugPrint(
+          '[EmployerFS/fetchEntries] unexpected empty chunks employer=$employerUid employee=$employeeUid',
+        );
+      }
+      return [];
+    }
+    if (kDebugMode) {
+      _logEmployerEntriesDebug(
+        'fetchEntries',
+        employerUid: employerUid,
+        employeeUid: employeeUid,
+        workspaceIds: allowed,
+        chunkCount: chunks.length,
+      );
+    }
     final startTs = Timestamp.fromDate(period.start);
     final endTs = Timestamp.fromDate(period.endInclusive);
     final ref = _db.collection('users').doc(employeeUid).collection('entries');
@@ -495,15 +543,36 @@ class FirestoreService {
     );
     final merged = <WorkEntry>[];
     final seen = <String>{};
-    for (final chunk in _workspaceIdChunks(allowed)) {
-      final snap = await ref
-          .where('workspaceId', whereIn: chunk)
-          .where('start', isGreaterThanOrEqualTo: startTs)
-          .where('start', isLessThanOrEqualTo: endTs)
-          .get(opts);
-      for (final d in snap.docs) {
-        if (seen.add(d.id)) {
-          merged.add(WorkEntry.fromDoc(d.id, d.data()));
+    for (var ci = 0; ci < chunks.length; ci++) {
+      final chunk = chunks[ci];
+      if (chunk.isEmpty) continue;
+      try {
+        final snap = await ref
+            .where('workspaceId', whereIn: chunk)
+            .where('start', isGreaterThanOrEqualTo: startTs)
+            .where('start', isLessThanOrEqualTo: endTs)
+            .get(opts);
+        if (kDebugMode) {
+          debugPrint(
+            '[EmployerFS/fetchEntries] chunk ${ci + 1}/${chunks.length} '
+            'whereInSize=${chunk.length} docs=${snap.docs.length}',
+          );
+        }
+        for (final d in snap.docs) {
+          if (seen.add(d.id)) {
+            merged.add(WorkEntry.fromDoc(d.id, d.data()));
+          }
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint(
+            '[EmployerFS/fetchEntries] chunk ${ci + 1} failed employer=$employerUid '
+            'employee=$employeeUid err=$e',
+          );
+          debugPrintStack(
+            stackTrace: st,
+            label: 'employer_fetch_entries_chunk',
+          );
         }
       }
     }
@@ -521,6 +590,8 @@ class FirestoreService {
     StreamSubscription<List<TrackedWorkspaceAccess>>? accessSub;
     final entrySubs =
         <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    Set<String>? lastAttachedIds;
+    var attachGen = 0;
 
     void tearEntrySubs() {
       for (final s in entrySubs) {
@@ -529,41 +600,83 @@ class FirestoreService {
       entrySubs.clear();
     }
 
-    void attachForWorkspaces(Set<String> allowed) {
+    void attachForWorkspaces(Set<String> allowedRaw) {
+      final allowed = normalizedWorkspaceIdSet(allowedRaw);
+      if (setEquals(lastAttachedIds, allowed)) return;
+      lastAttachedIds = Set<String>.from(allowed);
       tearEntrySubs();
-      if (allowed.isEmpty) return;
-      final startTs = Timestamp.fromDate(period.start);
-      final endTs = Timestamp.fromDate(period.endInclusive);
-      final ref = _db
-          .collection('users')
-          .doc(employeeUid)
-          .collection('entries');
-      for (final chunk in _workspaceIdChunks(allowed)) {
-        final sub = ref
-            .where('workspaceId', whereIn: chunk)
-            .where('start', isGreaterThanOrEqualTo: startTs)
-            .where('start', isLessThanOrEqualTo: endTs)
-            .snapshots()
-            .listen((_) {
-              if (!controller.isClosed) controller.add(null);
-            }, onError: controller.addError);
-        entrySubs.add(sub);
-      }
+      final gen = ++attachGen;
+      final captured = allowed;
+      Future.microtask(() {
+        if (gen != attachGen || controller.isClosed) return;
+        if (captured.isEmpty) return;
+        final startTs = Timestamp.fromDate(period.start);
+        final endTs = Timestamp.fromDate(period.endInclusive);
+        final ref = _db
+            .collection('users')
+            .doc(employeeUid)
+            .collection('entries');
+        final chunks = workspaceIdChunksForWhereIn(captured);
+        if (kDebugMode && chunks.isNotEmpty) {
+          debugPrint(
+            '[EmployerFS/touchSignals] employer=$employerUid employee=$employeeUid '
+            'chunks=${chunks.length} firstChunk=${chunks.first.length}',
+          );
+        }
+        for (var ci = 0; ci < chunks.length; ci++) {
+          final chunk = chunks[ci];
+          if (chunk.isEmpty) continue;
+          final sub = ref
+              .where('workspaceId', whereIn: chunk)
+              .where('start', isGreaterThanOrEqualTo: startTs)
+              .where('start', isLessThanOrEqualTo: endTs)
+              .snapshots()
+              .listen(
+                (_) {
+                  if (!controller.isClosed) controller.add(null);
+                },
+                onError: (Object e, StackTrace st) {
+                  if (kDebugMode) {
+                    debugPrint(
+                      '[EmployerFS/touchSignals] stream err employer=$employerUid '
+                      'employee=$employeeUid chunk=${ci + 1}/${chunks.length} $e',
+                    );
+                    debugPrintStack(
+                      stackTrace: st,
+                      label: 'employer_touch_signals_chunk',
+                    );
+                  }
+                },
+              );
+          entrySubs.add(sub);
+        }
+      });
     }
 
     controller = StreamController<void>.broadcast(
       onListen: () {
-        accessSub = trackedWorkspaceAccessStream(employerUid).listen((
-          accessList,
-        ) {
-          final allowed = accessList
-              .where((a) => a.employeeUid == employeeUid.trim())
-              .map((a) => a.workspaceId)
-              .toSet();
-          attachForWorkspaces(allowed);
-        }, onError: controller.addError);
+        accessSub = trackedWorkspaceAccessStream(employerUid).listen(
+          (accessList) {
+            final allowed = accessList
+                .where((a) => a.employeeUid == employeeUid.trim())
+                .map((a) => a.workspaceId);
+            attachForWorkspaces(normalizedWorkspaceIdSet(allowed));
+          },
+          onError: (Object e, StackTrace st) {
+            if (kDebugMode) {
+              debugPrint(
+                '[EmployerFS/touchSignals] accessStream err employer=$employerUid $e',
+              );
+              debugPrintStack(
+                stackTrace: st,
+                label: 'employer_touch_signals_access',
+              );
+            }
+          },
+        );
       },
       onCancel: () {
+        attachGen++;
         tearEntrySubs();
         accessSub?.cancel();
       },
@@ -601,6 +714,8 @@ class FirestoreService {
     StreamSubscription<List<TrackedWorkspaceAccess>>? accessSub;
     final entrySubs =
         <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    Set<String>? lastAttachedIds;
+    var attachGen = 0;
 
     void tearEntrySubs() {
       for (final s in entrySubs) {
@@ -609,61 +724,108 @@ class FirestoreService {
       entrySubs.clear();
     }
 
-    void attachForWorkspaces(Set<String> allowed) {
+    void attachForWorkspaces(Set<String> allowedRaw) {
+      final allowed = normalizedWorkspaceIdSet(allowedRaw);
+      if (setEquals(lastAttachedIds, allowed)) return;
+      lastAttachedIds = Set<String>.from(allowed);
       tearEntrySubs();
-      if (allowed.isEmpty) {
-        if (!controller.isClosed) controller.add([]);
-        return;
-      }
-      final startTs = Timestamp.fromDate(period.start);
-      final endTs = Timestamp.fromDate(period.endInclusive);
-      final ref = _db
-          .collection('users')
-          .doc(employeeUid)
-          .collection('entries');
-      final chunks = _workspaceIdChunks(allowed);
-      final lists = List<List<WorkEntry>>.generate(
-        chunks.length,
-        (_) => <WorkEntry>[],
-      );
-      void emit() {
-        final merged = <WorkEntry>[for (final l in lists) ...l]
-          ..sort((a, b) => a.start.compareTo(b.start));
-        if (!controller.isClosed) controller.add(merged);
-      }
+      final gen = ++attachGen;
+      final captured = allowed;
+      Future.microtask(() {
+        if (gen != attachGen || controller.isClosed) return;
+        if (captured.isEmpty) {
+          if (!controller.isClosed) controller.add([]);
+          return;
+        }
+        final startTs = Timestamp.fromDate(period.start);
+        final endTs = Timestamp.fromDate(period.endInclusive);
+        final ref = _db
+            .collection('users')
+            .doc(employeeUid)
+            .collection('entries');
+        final chunks = workspaceIdChunksForWhereIn(captured);
+        if (kDebugMode) {
+          _logEmployerEntriesDebug(
+            'entriesMonthStream attach',
+            employerUid: employerUid,
+            employeeUid: employeeUid,
+            workspaceIds: captured,
+            chunkCount: chunks.length,
+          );
+        }
+        final lists = List<List<WorkEntry>>.generate(
+          chunks.length,
+          (_) => <WorkEntry>[],
+        );
+        void emit() {
+          final merged = <WorkEntry>[for (final l in lists) ...l]
+            ..sort((a, b) => a.start.compareTo(b.start));
+          if (!controller.isClosed) controller.add(merged);
+        }
 
-      emit();
-      for (var i = 0; i < chunks.length; i++) {
-        final idx = i;
-        final chunk = chunks[i];
-        final sub = ref
-            .where('workspaceId', whereIn: chunk)
-            .where('start', isGreaterThanOrEqualTo: startTs)
-            .where('start', isLessThanOrEqualTo: endTs)
-            .snapshots()
-            .listen((snap) {
-              lists[idx] = snap.docs
-                  .map((d) => WorkEntry.fromDoc(d.id, d.data()))
-                  .toList();
-              emit();
-            }, onError: controller.addError);
-        entrySubs.add(sub);
-      }
+        emit();
+        for (var i = 0; i < chunks.length; i++) {
+          final idx = i;
+          final chunk = chunks[i];
+          if (chunk.isEmpty) continue;
+          final sub = ref
+              .where('workspaceId', whereIn: chunk)
+              .where('start', isGreaterThanOrEqualTo: startTs)
+              .where('start', isLessThanOrEqualTo: endTs)
+              .snapshots()
+              .listen(
+                (snap) {
+                  lists[idx] = snap.docs
+                      .map((d) => WorkEntry.fromDoc(d.id, d.data()))
+                      .toList();
+                  emit();
+                },
+                onError: (Object e, StackTrace st) {
+                  if (kDebugMode) {
+                    debugPrint(
+                      '[EmployerFS/entriesMonthStream] err employer=$employerUid '
+                      'employee=$employeeUid chunk=${idx + 1}/${chunks.length} $e',
+                    );
+                    debugPrintStack(
+                      stackTrace: st,
+                      label: 'employer_entries_month_chunk',
+                    );
+                  }
+                  lists[idx] = [];
+                  emit();
+                },
+              );
+          entrySubs.add(sub);
+        }
+      });
     }
 
     controller = StreamController<List<WorkEntry>>.broadcast(
       onListen: () {
-        accessSub = trackedWorkspaceAccessStream(employerUid).listen((
-          accessList,
-        ) {
-          final allowed = accessList
-              .where((a) => a.employeeUid == employeeUid.trim())
-              .map((a) => a.workspaceId)
-              .toSet();
-          attachForWorkspaces(allowed);
-        }, onError: controller.addError);
+        accessSub = trackedWorkspaceAccessStream(employerUid).listen(
+          (accessList) {
+            final allowed = accessList
+                .where((a) => a.employeeUid == employeeUid.trim())
+                .map((a) => a.workspaceId);
+            attachForWorkspaces(normalizedWorkspaceIdSet(allowed));
+          },
+          onError: (Object e, StackTrace st) {
+            if (kDebugMode) {
+              debugPrint(
+                '[EmployerFS/entriesMonthStream] accessStream err '
+                'employer=$employerUid $e',
+              );
+              debugPrintStack(
+                stackTrace: st,
+                label: 'employer_entries_month_access',
+              );
+            }
+            if (!controller.isClosed) controller.add([]);
+          },
+        );
       },
       onCancel: () {
+        attachGen++;
         tearEntrySubs();
         accessSub?.cancel();
       },
