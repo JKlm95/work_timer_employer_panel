@@ -57,6 +57,10 @@ Future<void> showAddEmployeeDialog(
           }
 
           return AlertDialog(
+            titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            actionsAlignment: MainAxisAlignment.end,
             title: const Text('Add employee'),
             content: SizedBox(
               width: 400,
@@ -64,11 +68,21 @@ Future<void> showAddEmployeeDialog(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'Link someone by the work email they use in Work Timer and the company name that matches their workspace.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: emailCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Employee work email',
                       hintText: 'name@company.com',
+                      helperText:
+                          'Must match the account they log into on mobile.',
                     ),
                     keyboardType: TextInputType.emailAddress,
                     autofocus: true,
@@ -78,15 +92,41 @@ Future<void> showAddEmployeeDialog(
                     controller: companyCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Company name',
-                      hintText: 'Matches workspace company slug (normalized)',
+                      hintText: 'Same as workspace company / slug',
+                      helperText: 'Used to match the correct workspaces.',
                     ),
                   ),
                   if (error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+                    const SizedBox(height: 14),
+                    Material(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.errorContainer.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.error_outline_rounded,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                error!,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onErrorContainer,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],

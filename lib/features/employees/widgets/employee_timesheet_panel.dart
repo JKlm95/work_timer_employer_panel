@@ -3,14 +3,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/theme/app_layout.dart';
 import '../../../core/utils/entry_amount_breakdown.dart';
 import '../../../core/utils/report_period.dart';
 import '../../../core/utils/timesheet_entry_utils.dart';
 import '../../../core/utils/timesheet_month_summary.dart';
+import '../../../core/widgets/app_empty_state.dart';
+import '../../../core/widgets/app_pulse_loading.dart';
 import '../../../models/work_entry.dart';
 import '../../../models/workspace.dart';
 import '../../../services/firestore_service.dart';
 import 'time_entry_edit_dialog.dart';
+import 'timesheet_entry_badges.dart';
 
 /// Month timesheet with filters, summary, and CRUD for `users/{employeeUid}/entries`.
 class EmployeeTimesheetPanel extends StatefulWidget {
@@ -68,23 +72,33 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
   Future<void> _confirmDelete(WorkEntry e) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Remove time entry?'),
-        content: const Text(
-          'The entry will be hidden and marked deleted (soft delete). '
-          'You can restore it while “Show deleted” is on.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Cancel'),
+      builder: (c) {
+        final scheme = Theme.of(c).colorScheme;
+        return AlertDialog(
+          icon: Icon(Icons.delete_outline_rounded, color: scheme.error),
+          title: const Text('Remove time entry?'),
+          content: const Text(
+            'The entry will be hidden and marked deleted (soft delete). '
+            'You can restore it while “Show deleted” is on.',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          actionsAlignment: MainAxisAlignment.end,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: scheme.error,
+                foregroundColor: scheme.onError,
+              ),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
     );
     if (ok != true || !mounted) return;
     try {
@@ -140,7 +154,7 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     final wsEmpty = widget.workspaces.isEmpty;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppLayout.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -148,8 +162,9 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
               children: [
                 Text(
                   'Timesheet',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
                   ),
                 ),
                 const Spacer(),
@@ -174,23 +189,21 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               'Employer can add and edit closed entries for this employee. Amount uses workspace hourly rate × duration × billing %.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             if (wsEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'This employee has no workspaces in this company scope — timesheet is unavailable.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+              AppEmptyState(
+                icon: Icons.workspaces_outlined,
+                title: 'This employee has no workspaces',
+                subtitle:
+                    'In this company scope there are no projects — timesheet is unavailable.',
               )
             else ...[
               _monthNav(context),
@@ -236,11 +249,12 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
                     );
                   }
                   if (!snap.hasData) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(),
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical: 28,
+                        horizontal: 8,
                       ),
+                      child: AppPulseLoading(rows: 6),
                     );
                   }
                   _lastGoodEntries = snap.data;
@@ -255,22 +269,37 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
   }
 
   Widget _monthNav(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final label = DateFormat.yMMMM().format(_month);
-    return Row(
-      children: [
-        IconButton(onPressed: _prevMonth, icon: const Icon(Icons.chevron_left)),
-        Expanded(
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
+    return Material(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(AppLayout.radiusMd),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Previous month',
+              onPressed: _prevMonth,
+              icon: const Icon(Icons.chevron_left),
+            ),
+            Expanded(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Next month',
+              onPressed: _nextMonth,
+              icon: const Icon(Icons.chevron_right),
+            ),
+          ],
         ),
-        IconButton(
-          onPressed: _nextMonth,
-          icon: const Icon(Icons.chevron_right),
-        ),
-      ],
+      ),
     );
   }
 
@@ -278,126 +307,150 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     return LayoutBuilder(
       builder: (context, c) {
         final narrow = c.maxWidth < 520;
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: narrow ? double.infinity : 200,
-              child: DropdownButtonFormField<String>(
-                value: _workspaceFilter ?? 'all',
-                decoration: const InputDecoration(
-                  labelText: 'Workspace',
-                  isDense: true,
-                ),
-                items: [
-                  const DropdownMenuItem(
-                    value: 'all',
-                    child: Text('All workspaces'),
-                  ),
-                  for (final w in widget.workspaces)
-                    DropdownMenuItem(
-                      value: w.id,
-                      child: Text(w.name, overflow: TextOverflow.ellipsis),
+        final scheme = Theme.of(context).colorScheme;
+        return Material(
+          color: scheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppLayout.radiusMd),
+            side: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.65),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: narrow ? double.infinity : 200,
+                  child: DropdownButtonFormField<String>(
+                    value: _workspaceFilter ?? 'all',
+                    decoration: const InputDecoration(
+                      labelText: 'Workspace',
+                      isDense: true,
                     ),
-                ],
-                onChanged: (v) =>
-                    setState(() => _workspaceFilter = v == 'all' ? null : v),
-              ),
-            ),
-            SizedBox(
-              width: narrow ? double.infinity : 160,
-              child: DropdownButtonFormField<String>(
-                value: _entryTypeFilter,
-                decoration: const InputDecoration(
-                  labelText: 'Entry type',
-                  isDense: true,
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All types')),
-                  DropdownMenuItem(value: 'work', child: Text('work')),
-                  DropdownMenuItem(value: 'vacation', child: Text('vacation')),
-                  DropdownMenuItem(
-                    value: 'sickLeave',
-                    child: Text('sickLeave'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All workspaces'),
+                      ),
+                      for (final w in widget.workspaces)
+                        DropdownMenuItem(
+                          value: w.id,
+                          child: Text(w.name, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) => setState(
+                      () => _workspaceFilter = v == 'all' ? null : v,
+                    ),
                   ),
-                  DropdownMenuItem(
-                    value: 'businessTrip',
-                    child: Text('businessTrip'),
+                ),
+                SizedBox(
+                  width: narrow ? double.infinity : 160,
+                  child: DropdownButtonFormField<String>(
+                    value: _entryTypeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Entry type',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All types')),
+                      DropdownMenuItem(value: 'work', child: Text('work')),
+                      DropdownMenuItem(
+                        value: 'vacation',
+                        child: Text('vacation'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'sickLeave',
+                        child: Text('sickLeave'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'businessTrip',
+                        child: Text('businessTrip'),
+                      ),
+                      DropdownMenuItem(value: 'other', child: Text('other')),
+                    ],
+                    onChanged: (v) =>
+                        v != null ? setState(() => _entryTypeFilter = v) : null,
                   ),
-                  DropdownMenuItem(value: 'other', child: Text('other')),
-                ],
-                onChanged: (v) =>
-                    v != null ? setState(() => _entryTypeFilter = v) : null,
-              ),
-            ),
-            SizedBox(
-              width: narrow ? double.infinity : 160,
-              child: DropdownButtonFormField<String>(
-                value: _billableFilter,
-                decoration: const InputDecoration(
-                  labelText: 'Billable',
-                  isDense: true,
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All')),
-                  DropdownMenuItem(value: 'billable', child: Text('Billable')),
-                  DropdownMenuItem(value: 'non', child: Text('Non-billable')),
-                ],
-                onChanged: (v) =>
-                    v != null ? setState(() => _billableFilter = v) : null,
-              ),
-            ),
-            FilterChip(
-              label: const Text('Show deleted'),
-              selected: _showDeleted,
-              onSelected: (v) => setState(() => _showDeleted = v),
-            ),
-            SizedBox(
-              width: narrow ? double.infinity : 220,
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Search task / note',
-                  isDense: true,
-                  prefixIcon: Icon(Icons.search, size: 20),
+                SizedBox(
+                  width: narrow ? double.infinity : 160,
+                  child: DropdownButtonFormField<String>(
+                    value: _billableFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Billable',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All')),
+                      DropdownMenuItem(
+                        value: 'billable',
+                        child: Text('Billable'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'non',
+                        child: Text('Non-billable'),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        v != null ? setState(() => _billableFilter = v) : null,
+                  ),
                 ),
-                onSubmitted: (_) => setState(() {}),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Apply search',
-              onPressed: () => setState(() {}),
-              icon: const Icon(Icons.filter_alt_outlined),
-            ),
-            DropdownButtonFormField<TimesheetSort>(
-              value: _sort,
-              decoration: const InputDecoration(
-                labelText: 'Sort',
-                isDense: true,
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: TimesheetSort.newestFirst,
-                  child: Text('Newest first'),
+                FilterChip(
+                  label: const Text('Show deleted'),
+                  selected: _showDeleted,
+                  onSelected: (v) => setState(() => _showDeleted = v),
                 ),
-                DropdownMenuItem(
-                  value: TimesheetSort.oldestFirst,
-                  child: Text('Oldest first'),
+                SizedBox(
+                  width: narrow ? double.infinity : 220,
+                  child: TextField(
+                    controller: _searchCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Search task / note',
+                      isDense: true,
+                      prefixIcon: Icon(Icons.search, size: 20),
+                    ),
+                    onSubmitted: (_) => setState(() {}),
+                  ),
                 ),
-                DropdownMenuItem(
-                  value: TimesheetSort.durationDesc,
-                  child: Text('Duration ↓'),
+                IconButton(
+                  tooltip: 'Apply search',
+                  onPressed: () => setState(() {}),
+                  icon: const Icon(Icons.filter_alt_outlined),
                 ),
-                DropdownMenuItem(
-                  value: TimesheetSort.amountDesc,
-                  child: Text('Amount ↓'),
+                DropdownButtonFormField<TimesheetSort>(
+                  value: _sort,
+                  decoration: const InputDecoration(
+                    labelText: 'Sort',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: TimesheetSort.newestFirst,
+                      child: Text('Newest first'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimesheetSort.oldestFirst,
+                      child: Text('Oldest first'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimesheetSort.durationDesc,
+                      child: Text('Duration ↓'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimesheetSort.amountDesc,
+                      child: Text('Amount ↓'),
+                    ),
+                  ],
+                  onChanged: (v) =>
+                      v != null ? setState(() => _sort = v) : null,
                 ),
               ],
-              onChanged: (v) => v != null ? setState(() => _sort = v) : null,
             ),
-          ],
+          ),
         );
       },
     );
@@ -434,26 +487,20 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     );
 
     if (raw.isEmpty && !loading) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'No entries in this month.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
+      return AppEmptyState(
+        icon: Icons.event_busy_outlined,
+        title: 'No entries in this month',
+        subtitle:
+            'When this employee logs time for this month, it will show up here.',
       );
     }
 
     if (sorted.isEmpty && !loading) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'No entries match current filters.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
+      return AppEmptyState(
+        icon: Icons.filter_alt_off_outlined,
+        title: 'No entries match current filters',
+        subtitle:
+            'Try clearing search or changing workspace, type, or billable filters.',
       );
     }
 
@@ -493,19 +540,32 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
       children: [
         Text(
           'Month summary',
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.1,
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 12,
+          spacing: 8,
           runSpacing: 8,
           children: [
-            Chip(label: Text('Total: ${fmtH.format(h)} h')),
-            Chip(label: Text('Billable work: ${fmtH.format(bh)} h')),
-            Chip(label: Text('Non-bill. work: ${fmtH.format(nbh)} h')),
-            Chip(label: Text('Estimated: ${money.isEmpty ? '—' : money}')),
+            Chip(
+              avatar: const Icon(Icons.schedule, size: 18),
+              label: Text('Total: ${fmtH.format(h)} h'),
+            ),
+            Chip(
+              avatar: const Icon(Icons.trending_up, size: 18),
+              label: Text('Billable work: ${fmtH.format(bh)} h'),
+            ),
+            Chip(
+              avatar: const Icon(Icons.trending_flat, size: 18),
+              label: Text('Non-bill. work: ${fmtH.format(nbh)} h'),
+            ),
+            Chip(
+              avatar: const Icon(Icons.payments_outlined, size: 18),
+              label: Text('Estimated: ${money.isEmpty ? '—' : money}'),
+            ),
           ],
         ),
         if (typeLines.isNotEmpty) ...[
@@ -527,59 +587,109 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
   }
 
   Widget _entryTable(BuildContext context, List<WorkEntry> rows) {
+    final scheme = Theme.of(context).colorScheme;
     final df = DateFormat.yMMMd();
     final tf = DateFormat.Hm();
+    final mono = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Date')),
-          DataColumn(label: Text('Start')),
-          DataColumn(label: Text('End')),
-          DataColumn(label: Text('Duration')),
-          DataColumn(label: Text('Project')),
-          DataColumn(label: Text('Type')),
-          DataColumn(label: Text('%')),
-          DataColumn(label: Text('Task')),
-          DataColumn(label: Text('Note')),
-          DataColumn(label: Text('Amount')),
-          DataColumn(label: Text('Status')),
-          DataColumn(label: Text('Actions')),
-        ],
-        rows: [
-          for (final e in rows)
-            DataRow(
-              cells: [
-                DataCell(Text(df.format(e.start))),
-                DataCell(Text(tf.format(e.start))),
-                DataCell(Text(e.end != null ? tf.format(e.end!) : '—')),
-                DataCell(Text(_durStr(e))),
-                DataCell(Text(_wsMap[e.workspaceId]?.name ?? e.workspaceId)),
-                DataCell(Text(EntryAmountResult.entryTypeLabel(e.entryType))),
-                DataCell(
-                  Text('${(e.billingRatePercent ?? 100).toStringAsFixed(0)}%'),
-                ),
-                DataCell(
-                  Text(
-                    e.taskTitle ?? '—',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    e.note ?? '—',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                DataCell(_amountCell(context, e)),
-                DataCell(Text(_statusLabel(e))),
-                DataCell(_actions(context, e)),
-              ],
-            ),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 920),
+        child: DataTable(
+          headingRowColor: WidgetStatePropertyAll(
+            scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          ),
+          dataRowMinHeight: 52,
+          dataRowMaxHeight: 96,
+          columns: const [
+            DataColumn(label: Text('Date')),
+            DataColumn(label: Text('Start')),
+            DataColumn(label: Text('End')),
+            DataColumn(label: Text('Duration')),
+            DataColumn(label: Text('Project')),
+            DataColumn(label: Text('Tags')),
+            DataColumn(label: Text('Task')),
+            DataColumn(label: Text('Note')),
+            DataColumn(numeric: true, label: Text('Amount')),
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Actions')),
+          ],
+          rows: [
+            for (var i = 0; i < rows.length; i++)
+              _dataRowForEntry(context, rows[i], i, df, tf, mono),
+          ],
+        ),
       ),
+    );
+  }
+
+  DataRow _dataRowForEntry(
+    BuildContext context,
+    WorkEntry e,
+    int index,
+    DateFormat df,
+    DateFormat tf,
+    TextStyle? mono,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final wsName = _wsMap[e.workspaceId]?.name ?? e.workspaceId;
+    final task = e.taskTitle ?? '';
+    final note = e.note ?? '';
+    return DataRow(
+      color: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.hovered)) {
+          return scheme.primary.withValues(alpha: 0.07);
+        }
+        if (index.isEven) {
+          return scheme.surfaceContainerHighest.withValues(alpha: 0.4);
+        }
+        return null;
+      }),
+      cells: [
+        DataCell(Text(df.format(e.start))),
+        DataCell(Text(tf.format(e.start), style: mono)),
+        DataCell(Text(e.end != null ? tf.format(e.end!) : '—', style: mono)),
+        DataCell(
+          Text(_durStr(e), style: mono?.copyWith(fontWeight: FontWeight.w600)),
+        ),
+        DataCell(
+          Tooltip(
+            message: wsName,
+            child: Text(wsName, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+        DataCell(
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: TimesheetEntryBadges(entry: e, dense: true),
+          ),
+        ),
+        DataCell(
+          Tooltip(
+            message: task.isEmpty ? '' : task,
+            child: Text(
+              task.isEmpty ? '—' : task,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        DataCell(
+          Tooltip(
+            message: note.isEmpty ? '' : note,
+            child: Text(
+              note.isEmpty ? '—' : note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        DataCell(_amountCell(context, e)),
+        DataCell(Text(_statusLabel(e))),
+        DataCell(_actions(context, e)),
+      ],
     );
   }
 
@@ -595,8 +705,10 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
         final e = rows[i];
         final ar = EntryAmountResult.compute(e, _wsMap[e.workspaceId]);
         return Card(
+          clipBehavior: Clip.antiAlias,
+          margin: EdgeInsets.zero,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -605,29 +717,51 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
                     Expanded(
                       child: Text(
                         '${df.format(e.start)} · ${tf.format(e.start)}–${e.end != null ? tf.format(e.end!) : "—"}',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     Text(
                       _statusLabel(e),
-                      style: Theme.of(context).textTheme.labelSmall,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 6),
                 Text(
                   _wsMap[e.workspaceId]?.name ?? e.workspaceId,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
+                const SizedBox(height: 8),
+                TimesheetEntryBadges(entry: e),
+                const SizedBox(height: 8),
                 Text(
-                  '${_durStr(e)} · ${EntryAmountResult.entryTypeLabel(e.entryType)} · ${(e.billingRatePercent ?? 100).toStringAsFixed(0)}%',
+                  _durStr(e),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
                 if (ar.formulaLine.isNotEmpty)
                   Text(
                     ar.formulaLine,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 Text(
                   'Amount: ${ar.displayAmount} ${ar.currency}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 Align(
                   alignment: Alignment.centerRight,
@@ -650,13 +784,20 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
 
   Widget _amountCell(BuildContext context, WorkEntry e) {
     final ar = EntryAmountResult.compute(e, _wsMap[e.workspaceId]);
+    final t = Theme.of(context);
     return Tooltip(
       message: ar.formulaLine.isEmpty
           ? (ar.skipReason == EntryAmountSkipReason.noRate
                 ? 'No hourly rate on workspace'
                 : '')
           : ar.formulaLine,
-      child: Text(ar.displayAmount),
+      child: Text(
+        ar.displayAmount,
+        style: t.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
     );
   }
 

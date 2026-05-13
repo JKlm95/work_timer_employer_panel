@@ -79,6 +79,25 @@ ThemeData buildLightTheme() {
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.65)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: scheme.onSurface,
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      contentTextStyle: TextStyle(
+        color: scheme.onInverseSurface,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
   );
 }
 
@@ -157,6 +176,25 @@ ThemeData buildDarkTheme() {
     ),
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.65)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: scheme.onSurface,
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      contentTextStyle: TextStyle(
+        color: scheme.onInverseSurface,
+        fontWeight: FontWeight.w500,
+      ),
     ),
   );
 }

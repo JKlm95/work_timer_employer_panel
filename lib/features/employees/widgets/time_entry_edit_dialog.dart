@@ -223,6 +223,10 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
     return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actionsAlignment: MainAxisAlignment.end,
       title: Text(isEdit ? 'Edit time entry' : 'Add time entry'),
       content: SingleChildScrollView(
         child: Form(
@@ -233,6 +237,14 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  'Workspace & time',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _workspaceId,
                   decoration: const InputDecoration(labelText: 'Workspace'),
@@ -279,6 +291,16 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Text(
+                  'Classification',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _entryType,
                   decoration: const InputDecoration(labelText: 'Entry type'),
@@ -314,6 +336,7 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                     labelText: 'Task title (optional)',
                   ),
                 ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _note,
                   decoration: const InputDecoration(
@@ -321,6 +344,17 @@ class _TimeEntryEditorDialogState extends State<_TimeEntryEditorDialog> {
                   ),
                   maxLines: 3,
                 ),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Text(
+                  'Technical',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _modeCtrl,
                   decoration: const InputDecoration(

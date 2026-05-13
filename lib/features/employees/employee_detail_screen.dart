@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/email_domain_utils.dart';
 import '../../core/utils/report_period.dart';
+import '../../core/widgets/app_pulse_loading.dart';
+import '../../core/widgets/app_pinned_toolbar.dart';
+import '../../core/widgets/employee_avatar.dart';
 import '../../core/widgets/employee_presence_badge.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
@@ -165,321 +169,422 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                   ),
                 ],
               ),
-              body: FutureBuilder<List<ws.Workspace>>(
-                key: ValueKey('${tr.id}_$_workspaceEpoch'),
-                future: widget.firestore.fetchEmployeeWorkspaces(
-                  tr.employeeUid,
-                ),
-                builder: (context, wsSnap) {
-                  if (wsSnap.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 480),
-                          child: Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.folder_off_outlined,
-                                    size: 40,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Could not load projects',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  SelectableText(
-                                    '${wsSnap.error}',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  OutlinedButton.icon(
-                                    onPressed: _reloadWorkspaces,
-                                    icon: const Icon(Icons.refresh),
-                                    label: const Text('Try again'),
-                                  ),
-                                ],
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppToolbarSurface(
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        final narrow = c.maxWidth < 520;
+                        if (narrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () => context.go('/employees'),
+                                icon: const Icon(Icons.arrow_back_rounded),
+                                label: const Text('Employees'),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: _reloadWorkspaces,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Reload projects'),
+                              ),
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => context.go('/employees'),
+                              icon: const Icon(Icons.arrow_back_rounded),
+                              label: const Text('Employees'),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Profile, projects, and timesheet',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
-                        ),
+                            OutlinedButton.icon(
+                              onPressed: _reloadWorkspaces,
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('Reload projects'),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: FutureBuilder<List<ws.Workspace>>(
+                      key: ValueKey('${tr.id}_$_workspaceEpoch'),
+                      future: widget.firestore.fetchEmployeeWorkspaces(
+                        tr.employeeUid,
                       ),
-                    );
-                  }
-                  if (wsSnap.connectionState == ConnectionState.waiting &&
-                      !wsSnap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (!wsSnap.hasData) {
-                    return const Center(child: Text('No workspace data.'));
-                  }
-                  final workspaces = wsSnap.data!.where((w) {
-                    final slugOk =
-                        (w.companySlug ?? '').toLowerCase() ==
-                        tr.companySlug.toLowerCase();
-                    final dom = w.employeeWorkEmailDomain?.toLowerCase();
-                    final domOk = dom != null && dom == employerDomain;
-                    return slugOk && domOk;
-                  }).toList();
-
-                  final calc = ReportCalculationService();
-                  final period = monthContaining(DateTime.now());
-
-                  return FutureBuilder<_EmpHeaderStats>(
-                    future: _loadHeaderStats(tr, period, calc),
-                    builder: (context, hdr) {
-                      final stats = hdr.data;
-                      return SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 960),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Card(
+                      builder: (context, wsSnap) {
+                        if (wsSnap.hasError) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 480,
+                                ),
+                                child: Card(
                                   child: Padding(
-                                    padding: const EdgeInsets.all(20),
+                                    padding: const EdgeInsets.all(24),
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 28,
-                                              backgroundColor: Theme.of(
-                                                context,
-                                              ).colorScheme.primaryContainer,
-                                              child: Text(
-                                                employeeInitials(tr),
-                                                style: const TextStyle(
-                                                  fontSize: 20,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 16),
-                                            Expanded(
-                                              child: Column(
+                                        Icon(
+                                          Icons.folder_off_outlined,
+                                          size: 40,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          'Could not load projects',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        SelectableText(
+                                          '${wsSnap.error}',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        OutlinedButton.icon(
+                                          onPressed: _reloadWorkspaces,
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text('Try again'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (wsSnap.connectionState == ConnectionState.waiting &&
+                            !wsSnap.hasData) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: AppPulseLoading(rows: 5),
+                            ),
+                          );
+                        }
+                        if (!wsSnap.hasData) {
+                          return const Center(
+                            child: Text('No workspace data.'),
+                          );
+                        }
+                        final workspaces = wsSnap.data!.where((w) {
+                          final slugOk =
+                              (w.companySlug ?? '').toLowerCase() ==
+                              tr.companySlug.toLowerCase();
+                          final dom = w.employeeWorkEmailDomain?.toLowerCase();
+                          final domOk = dom != null && dom == employerDomain;
+                          return slugOk && domOk;
+                        }).toList();
+
+                        final calc = ReportCalculationService();
+                        final period = monthContaining(DateTime.now());
+
+                        return FutureBuilder<_EmpHeaderStats>(
+                          future: _loadHeaderStats(tr, period, calc),
+                          builder: (context, hdr) {
+                            final stats = hdr.data;
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.all(
+                                AppLayout.pagePadding,
+                              ),
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 960,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Card(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(20),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
-                                                  Text(
-                                                    employeeFullName(tr),
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleLarge
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                  ),
-                                                  if (employeeShowEmailAsSubtitle(
-                                                    tr,
-                                                  )) ...[
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      tr.employeeEmail,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .bodyMedium
-                                                          ?.copyWith(
-                                                            color: Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant,
-                                                          ),
+                                                  EmployeeAvatar(
+                                                    seed: tr.employeeUid,
+                                                    initials: employeeInitials(
+                                                      tr,
                                                     ),
-                                                  ],
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    'Company: ${tr.companyName}',
+                                                    radius: 28,
+                                                    fontSize: 20,
                                                   ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    groupLabels.isEmpty
-                                                        ? 'Groups: —'
-                                                        : 'Groups: $groupLabels',
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.bodyMedium,
-                                                  ),
-                                                  const SizedBox(height: 12),
-                                                  Wrap(
-                                                    spacing: 12,
-                                                    runSpacing: 8,
-                                                    crossAxisAlignment:
-                                                        WrapCrossAlignment
-                                                            .center,
-                                                    children: [
-                                                      EmployeePresenceBadge(
-                                                        firestore:
-                                                            widget.firestore,
-                                                        tracked: tr,
-                                                      ),
-                                                      FutureBuilder<DateTime?>(
-                                                        future: widget.firestore
-                                                            .fetchLastActivityAt(
-                                                              tr.employeeUid,
+                                                  const SizedBox(width: 16),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          employeeFullName(tr),
+                                                          style: Theme.of(context)
+                                                              .textTheme
+                                                              .titleLarge
+                                                              ?.copyWith(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                              ),
+                                                        ),
+                                                        if (employeeShowEmailAsSubtitle(
+                                                          tr,
+                                                        )) ...[
+                                                          const SizedBox(
+                                                            height: 4,
+                                                          ),
+                                                          Text(
+                                                            tr.employeeEmail,
+                                                            style: Theme.of(context)
+                                                                .textTheme
+                                                                .bodyMedium
+                                                                ?.copyWith(
+                                                                  color: Theme.of(
+                                                                    context,
+                                                                  ).colorScheme.onSurfaceVariant,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        Text(
+                                                          'Company: ${tr.companyName}',
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        Text(
+                                                          groupLabels.isEmpty
+                                                              ? 'Groups: —'
+                                                              : 'Groups: $groupLabels',
+                                                          style:
+                                                              Theme.of(context)
+                                                                  .textTheme
+                                                                  .bodyMedium,
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 12,
+                                                        ),
+                                                        Wrap(
+                                                          spacing: 12,
+                                                          runSpacing: 8,
+                                                          crossAxisAlignment:
+                                                              WrapCrossAlignment
+                                                                  .center,
+                                                          children: [
+                                                            EmployeePresenceBadge(
+                                                              firestore: widget
+                                                                  .firestore,
+                                                              tracked: tr,
                                                             ),
-                                                        builder: (context, la) {
-                                                          final d = la.data;
-                                                          final text = d == null
-                                                              ? 'Last activity: —'
-                                                              : 'Last activity: ${DateFormat.yMMMd().add_jm().format(d)}';
-                                                          return Text(
-                                                            text,
+                                                            FutureBuilder<
+                                                              DateTime?
+                                                            >(
+                                                              future: widget
+                                                                  .firestore
+                                                                  .fetchLastActivityAt(
+                                                                    tr.employeeUid,
+                                                                  ),
+                                                              builder: (context, la) {
+                                                                final d =
+                                                                    la.data;
+                                                                final text =
+                                                                    d == null
+                                                                    ? 'Last activity: —'
+                                                                    : 'Last activity: ${DateFormat.yMMMd().add_jm().format(d)}';
+                                                                return Text(
+                                                                  text,
+                                                                  style: Theme.of(context)
+                                                                      .textTheme
+                                                                      .bodySmall
+                                                                      ?.copyWith(
+                                                                        color: Theme.of(
+                                                                          context,
+                                                                        ).colorScheme.onSurfaceVariant,
+                                                                      ),
+                                                                );
+                                                              },
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        if (hdr.hasError) ...[
+                                                          const SizedBox(
+                                                            height: 16,
+                                                          ),
+                                                          Text(
+                                                            'Month summary unavailable: ${hdr.error}',
                                                             style: Theme.of(context)
                                                                 .textTheme
                                                                 .bodySmall
                                                                 ?.copyWith(
                                                                   color: Theme.of(
                                                                     context,
-                                                                  ).colorScheme.onSurfaceVariant,
+                                                                  ).colorScheme.error,
                                                                 ),
-                                                          );
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  if (hdr.hasError) ...[
-                                                    const SizedBox(height: 16),
-                                                    Text(
-                                                      'Month summary unavailable: ${hdr.error}',
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .bodySmall
-                                                          ?.copyWith(
-                                                            color: Theme.of(
-                                                              context,
-                                                            ).colorScheme.error,
                                                           ),
-                                                    ),
-                                                  ] else if (stats != null) ...[
-                                                    const SizedBox(height: 16),
-                                                    Wrap(
-                                                      spacing: 12,
-                                                      runSpacing: 8,
-                                                      children: [
-                                                        _infoChip(
-                                                          context,
-                                                          'Hours this month',
-                                                          stats.hoursThisMonth
-                                                              .toStringAsFixed(
-                                                                1,
+                                                        ] else if (stats !=
+                                                            null) ...[
+                                                          const SizedBox(
+                                                            height: 16,
+                                                          ),
+                                                          Wrap(
+                                                            spacing: 12,
+                                                            runSpacing: 8,
+                                                            children: [
+                                                              _infoChip(
+                                                                context,
+                                                                'Hours this month',
+                                                                stats
+                                                                    .hoursThisMonth
+                                                                    .toStringAsFixed(
+                                                                      1,
+                                                                    ),
                                                               ),
-                                                        ),
-                                                        _infoChip(
-                                                          context,
-                                                          'Estimated (month, saved)',
-                                                          stats.moneyText,
-                                                        ),
+                                                              _infoChip(
+                                                                context,
+                                                                'Estimated (month, saved)',
+                                                                stats.moneyText,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ],
                                                       ],
                                                     ),
-                                                  ],
+                                                  ),
                                                 ],
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Projects',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Hourly rate and currency can be edited here (saved to employee workspace).',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      if (workspaces.isEmpty)
+                                        Card(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(24),
+                                            child: Column(
+                                              children: [
+                                                Text(
+                                                  'No projects available for this access scope.',
+                                                  textAlign: TextAlign.center,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyLarge
+                                                      ?.copyWith(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                OutlinedButton.icon(
+                                                  onPressed: () =>
+                                                      context.go('/employees'),
+                                                  icon: const Icon(
+                                                    Icons.arrow_back,
+                                                  ),
+                                                  label: const Text(
+                                                    'Back to Employees',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        ...workspaces.map((w) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 12,
+                                            ),
+                                            child: _ProjectCard(
+                                              workspace: w,
+                                              tracked: tr,
+                                              firestore: widget.firestore,
+                                              period: period,
+                                              calc: calc,
+                                              onBillingUpdated:
+                                                  _reloadWorkspaces,
+                                            ),
+                                          );
+                                        }),
+                                      const SizedBox(height: 24),
+                                      EmployeeTimesheetPanel(
+                                        firestore: widget.firestore,
+                                        employerUid: uid,
+                                        employeeUid: tr.employeeUid,
+                                        workspaces: workspaces,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Projects',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Hourly rate and currency can be edited here (saved to employee workspace).',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                                const SizedBox(height: 12),
-                                if (workspaces.isEmpty)
-                                  Card(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(24),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            'No projects available for this access scope.',
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyLarge
-                                                ?.copyWith(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                context.go('/employees'),
-                                            icon: const Icon(Icons.arrow_back),
-                                            label: const Text(
-                                              'Back to Employees',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  ...workspaces.map((w) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _ProjectCard(
-                                        workspace: w,
-                                        tracked: tr,
-                                        firestore: widget.firestore,
-                                        period: period,
-                                        calc: calc,
-                                        onBillingUpdated: _reloadWorkspaces,
-                                      ),
-                                    );
-                                  }),
-                                const SizedBox(height: 24),
-                                EmployeeTimesheetPanel(
-                                  firestore: widget.firestore,
-                                  employerUid: uid,
-                                  employeeUid: tr.employeeUid,
-                                  workspaces: workspaces,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             );
           },

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_layout.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
 import '../../services/firestore_service.dart';
@@ -17,7 +18,7 @@ class GroupsScreen extends StatelessWidget {
     if (uid == null) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppLayout.pagePadding),
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(

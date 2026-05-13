@@ -119,6 +119,21 @@ Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. 
   `godziny × hourlyRate workspace × billingRatePercent / 100` (brak stawki → „No rate” / „—” w UI).
 - **Eksporty CSV/PDF** nie są częścią tego modułu timesheet (osobne ekrany raportów bez zmian w zakresie eksportu z tego zadania).
 
+## UI — wspólne komponenty (employer panel)
+
+Lekkie widgety i stałe layoutu (bez nowych zależności), używane przy empty/loading i nagłówkach:
+
+| Plik | Rola |
+|------|------|
+| `lib/core/theme/app_layout.dart` | `AppLayout` — odstępy strony, sekcji, promienie, `outlineSide` dla obramowań. |
+| `lib/core/widgets/app_empty_state.dart` | Ikona + tytuł + opcjonalny podtytuł (`detailSelectable` dla błędów z zaznaczalnym tekstem). |
+| `lib/core/widgets/app_pulse_loading.dart` | `AppPulseLoading` — pulsujące prostokąty zamiast gołego spinnera. |
+| `lib/core/widgets/app_pinned_toolbar.dart` | `AppPinnedToolbarDelegate` (pinned sliver), `AppToolbarSurface` (pasek z dolną krawędzią). |
+| `lib/core/widgets/employee_avatar.dart` | `EmployeeAvatar` — inicjały + deterministyczny kolor tła z `seed` (np. `employeeUid`). |
+| `lib/features/employees/widgets/timesheet_entry_badges.dart` | `TimesheetEntryBadges` — chipy typu / % / billable / deleted / edited w timesheecie. |
+
+Motyw (`app_theme.dart`): doprecyzowane `chipTheme` i `snackBarTheme` (floating, zaokrąglenia).
+
 ## Obliczenia raportów (`ReportCalculationService`)
 
 - Czas z `end - start`; pomijane `isDeleted` i brak `end` (poza statusem „Working”).

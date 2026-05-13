@@ -7,9 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/live_running_amounts.dart';
 import '../../core/utils/report_period.dart';
+import '../../core/widgets/app_empty_state.dart';
+import '../../core/widgets/app_pulse_loading.dart';
+import '../../core/widgets/employee_avatar.dart';
 import '../../core/widgets/employee_presence_badge.dart';
 import '../../models/employee_live_status.dart';
 import '../../models/employer_group.dart';
@@ -29,28 +33,23 @@ class _DashboardStreamError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppLayout.pagePadding),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.cloud_off_outlined,
-                size: 48,
-                color: Theme.of(context).colorScheme.error,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(AppLayout.cardPadding),
+              child: AppEmptyState(
+                icon: Icons.cloud_off_outlined,
+                iconColor: scheme.error,
+                title: title,
+                subtitle: detail,
+                detailSelectable: true,
               ),
-              const SizedBox(height: 16),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              SelectableText(
-                detail,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -429,7 +428,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             if (trackedSnap.connectionState == ConnectionState.waiting &&
                 !trackedSnap.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppLayout.pagePadding),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 360),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AppPulseLoading(rows: 5),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Loading dashboard…',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
             }
 
             _requestDashboardStatsSync(tracked);
@@ -444,7 +466,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 try {
                   final workingNow = _countWorkingNow(tracked, liveByUid);
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(AppLayout.pagePadding),
                     child: Align(
                       alignment: Alignment.topCenter,
                       child: ConstrainedBox(
@@ -452,73 +474,153 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Dashboard',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Monthly work report overview — not a legal payroll document.',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
+                            Text(
+                              'Dashboard',
+                              style: Theme.of(context).textTheme.headlineMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.5,
                                   ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Refresh data',
-                                  onPressed: _refreshingStats || tracked.isEmpty
-                                      ? null
-                                      : () => _manualRefresh(tracked),
-                                  icon: _refreshingStats
-                                      ? const SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.refresh),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 8,
-                                    top: 12,
-                                  ),
-                                  child: Text(
-                                    _lastStatsRefresh == null
-                                        ? 'Last updated: —'
-                                        : 'Last updated: ${DateFormat.Hms().format(_lastStatsRefresh!)}',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                ),
-                              ],
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Monthly work report overview — not a legal payroll document.',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    height: 1.4,
+                                  ),
+                            ),
+                            const SizedBox(height: 18),
+                            Material(
+                              color: Theme.of(context).colorScheme.surface,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppLayout.radiusMd,
+                                ),
+                                side: BorderSide(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant
+                                      .withValues(alpha: 0.75),
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                child: LayoutBuilder(
+                                  builder: (context, c) {
+                                    final narrow = c.maxWidth < 520;
+                                    if (narrow) {
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Text(
+                                            'Data refresh',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _lastStatsRefresh == null
+                                                ? 'Last updated: —'
+                                                : 'Last updated: ${DateFormat.Hms().format(_lastStatsRefresh!)}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Align(
+                                            alignment: Alignment.centerRight,
+                                            child: IconButton.filledTonal(
+                                              tooltip: 'Refresh data',
+                                              onPressed:
+                                                  _refreshingStats ||
+                                                      tracked.isEmpty
+                                                  ? null
+                                                  : () =>
+                                                        _manualRefresh(tracked),
+                                              icon: _refreshingStats
+                                                  ? const SizedBox(
+                                                      width: 22,
+                                                      height: 22,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                    )
+                                                  : const Icon(Icons.refresh),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                    return Row(
+                                      children: [
+                                        Text(
+                                          'Data refresh',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        const Spacer(),
+                                        Text(
+                                          _lastStatsRefresh == null
+                                              ? 'Last updated: —'
+                                              : 'Last updated: ${DateFormat.Hms().format(_lastStatsRefresh!)}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton.filledTonal(
+                                          tooltip: 'Refresh data',
+                                          onPressed:
+                                              _refreshingStats ||
+                                                  tracked.isEmpty
+                                              ? null
+                                              : () => _manualRefresh(tracked),
+                                          icon: _refreshingStats
+                                              ? const SizedBox(
+                                                  width: 22,
+                                                  height: 22,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Icon(Icons.refresh),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppLayout.sectionGap),
                             FutureBuilder<_DashboardSnapshot>(
                               key: ValueKey<(int, String)>((
                                 _refreshNonce,
@@ -636,30 +738,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         final w = constraints.maxWidth;
                                         final cards = [
                                           _SummaryCard(
-                                            title: 'Tracked employees',
-                                            value: '${tracked.length}',
-                                            icon: Icons.people_outline,
-                                            loading: false,
-                                          ),
-                                          _SummaryCard(
-                                            title: 'Active groups',
-                                            value: '$groupsCount',
-                                            icon: Icons.folder_special_outlined,
-                                            loading: false,
-                                          ),
-                                          _SummaryCard(
-                                            title: 'Working now',
-                                            value: '$workingNow',
-                                            icon: Icons.play_circle_outline,
-                                            loading: false,
-                                          ),
-                                          _SummaryCard(
                                             title: 'Hours this month',
                                             value: monthLoading
                                                 ? '…'
                                                 : stats.totalHours
                                                       .toStringAsFixed(1),
-                                            icon: Icons.schedule,
+                                            icon: Icons.schedule_rounded,
                                             loading: monthLoading,
                                           ),
                                           _SummaryCard(
@@ -680,9 +764,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             subtitle:
                                                 'Running timers × rate · UI only, not saved',
                                             value: liveSummary.displayValue(),
-                                            icon: Icons.bolt_outlined,
+                                            icon: Icons.bolt_rounded,
                                             loading: false,
                                             denseValue: true,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Tracked employees',
+                                            value: '${tracked.length}',
+                                            icon: Icons.people_outline_rounded,
+                                            loading: false,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Active groups',
+                                            value: '$groupsCount',
+                                            icon: Icons.folder_special_outlined,
+                                            loading: false,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Working now',
+                                            value: '$workingNow',
+                                            icon: Icons.play_circle_rounded,
+                                            loading: false,
                                           ),
                                         ];
                                         final cols = w > 1100
@@ -712,13 +814,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 );
                               },
                             ),
-                            const SizedBox(height: 28),
+                            const SizedBox(height: AppLayout.sectionGap),
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text(
-                                  'Recent tracked employees',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Recent tracked employees',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Up to five people — open a profile for full timesheet.',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
                                 ),
                                 const Spacer(),
                                 FilledButton.tonalIcon(
@@ -753,48 +877,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             const SizedBox(height: 12),
                             Card(
                               child: tracked.isEmpty
-                                  ? Padding(
-                                      padding: const EdgeInsets.all(32),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            'No employees tracked yet.',
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyLarge
-                                                ?.copyWith(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Add your first employee to start viewing reports.',
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 20),
-                                          FilledButton.icon(
-                                            onPressed: () =>
-                                                showAddEmployeeDialog(
-                                                  context,
-                                                  widget.firestore,
-                                                ),
-                                            icon: const Icon(
-                                              Icons.person_add_alt_1_outlined,
-                                            ),
-                                            label: const Text('Add employee'),
-                                          ),
-                                        ],
+                                  ? AppEmptyState(
+                                      icon: Icons.group_add_outlined,
+                                      title: 'No employees tracked yet',
+                                      subtitle:
+                                          'Add your first employee to start viewing reports and live presence.',
+                                      action: FilledButton.icon(
+                                        onPressed: () => showAddEmployeeDialog(
+                                          context,
+                                          widget.firestore,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.person_add_alt_1_outlined,
+                                        ),
+                                        label: const Text('Add employee'),
                                       ),
                                     )
                                   : FutureBuilder<_DashboardSnapshot>(
@@ -868,14 +964,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                         horizontal: 16,
                                                         vertical: 8,
                                                       ),
-                                                  leading: CircleAvatar(
-                                                    backgroundColor:
-                                                        Theme.of(context)
-                                                            .colorScheme
-                                                            .primaryContainer,
-                                                    child: Text(
-                                                      employeeInitials(e),
+                                                  leading: EmployeeAvatar(
+                                                    seed: e.employeeUid,
+                                                    initials: employeeInitials(
+                                                      e,
                                                     ),
+                                                    radius: 22,
                                                   ),
                                                   title: Text(
                                                     employeeFullName(e),
@@ -1014,12 +1108,27 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final iconBg = Color.alphaBlend(
+      scheme.primary.withValues(alpha: 0.12),
+      scheme.surface,
+    );
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppLayout.cardPadding),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 36, color: Theme.of(context).colorScheme.primary),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Icon(icon, size: 26, color: scheme.primary),
+              ),
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -1027,20 +1136,22 @@ class _SummaryCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   if (subtitle != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       subtitle!,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+                        height: 1.25,
                       ),
                     ),
                   ],
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   loading
                       ? const SizedBox(
                           height: 24,
@@ -1050,10 +1161,18 @@ class _SummaryCard extends StatelessWidget {
                       : Text(
                           value,
                           style: denseValue
-                              ? Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700)
-                              : Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ? Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.2,
+                                )
+                              : Theme.of(
+                                  context,
+                                ).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
                         ),
                 ],
               ),
