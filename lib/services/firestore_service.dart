@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/debug/live_status_debug_config.dart';
 import '../core/utils/company_slug_utils.dart';
+import '../core/utils/employer_entry_soft_patch.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/employee_presence_utils.dart';
 import '../core/utils/report_period.dart';
@@ -15,8 +16,8 @@ import '../models/workspace.dart';
 
 /// Firestore access for the employer panel.
 ///
-/// **MVP writes:** The only mutations allowed on employee-owned data from this panel are
-/// [updateWorkspaceBilling] (`hourlyRate`, `currency` on `users/{uid}/workspaces/{id}`).
+/// **MVP writes on employee data:** [updateWorkspaceBilling] on workspaces, and
+/// employer-authored **time entries** under `users/{uid}/entries` (see [createEmployeeEntry]).
 /// Tracked employees and groups live under `employers/{employerUid}/…`.
 ///
 /// **Security:** Reads under `users/{uid}/...` assume Firestore rules eventually allow
@@ -189,6 +190,73 @@ class FirestoreService {
         .where('start', isGreaterThanOrEqualTo: startTs)
         .where('start', isLessThanOrEqualTo: endTs)
         .snapshots();
+  }
+
+  CollectionReference<Map<String, dynamic>> _employeeEntries(
+    String employeeUid,
+  ) => _db.collection('users').doc(employeeUid).collection('entries');
+
+  /// Parsed list for employer timesheet (same query as [fetchEntriesInRange]).
+  Stream<List<WorkEntry>> employeeEntriesForMonthStream(
+    String employeeUid,
+    ReportPeriod period,
+  ) {
+    return entriesInMonthSnapshots(employeeUid, period).map(
+      (snap) =>
+          snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList(),
+    );
+  }
+
+  /// Alias for timesheet — entries whose `start` falls in [period].
+  Future<List<WorkEntry>> fetchEmployeeEntriesForMonth(
+    String employeeUid,
+    ReportPeriod period, {
+    bool preferServer = false,
+  }) => fetchEntriesInRange(employeeUid, period, preferServer: preferServer);
+
+  /// Creates a document under `users/{employeeUid}/entries`. Caller supplies a map that satisfies
+  /// [firestore.rules] (e.g. `createdBy`, `createdVia: employer_panel`).
+  Future<String> createEmployeeEntry({
+    required String employerUid,
+    required String employeeUid,
+    required Map<String, dynamic> data,
+  }) async {
+    await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
+    final doc = _employeeEntries(employeeUid).doc();
+    await doc.set(data);
+    return doc.id;
+  }
+
+  Future<void> updateEmployeeEntry({
+    required String employeeUid,
+    required String entryId,
+    required Map<String, dynamic> data,
+  }) async {
+    await _employeeEntries(employeeUid).doc(entryId).update(data);
+  }
+
+  Future<void> softDeleteEmployeeEntry({
+    required String employerUid,
+    required String employeeUid,
+    required String entryId,
+  }) async {
+    await updateEmployeeEntry(
+      employeeUid: employeeUid,
+      entryId: entryId,
+      data: employerEntrySoftDeletePatch(employerUid),
+    );
+  }
+
+  Future<void> restoreEmployeeEntry({
+    required String employerUid,
+    required String employeeUid,
+    required String entryId,
+  }) async {
+    await updateEmployeeEntry(
+      employeeUid: employeeUid,
+      entryId: entryId,
+      data: employerEntryRestorePatch(employerUid),
+    );
   }
 
   /// Each emission re-reads `userEmailIndex/{employeeEmailLower}` so names stay in sync with mobile

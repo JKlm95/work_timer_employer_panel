@@ -39,7 +39,9 @@ class Workspace extends Equatable {
       employeeWorkEmail: data['employeeWorkEmail'] as String?,
       employeeWorkEmailDomain: data['employeeWorkEmailDomain'] as String?,
       hourlyRate: (data['hourlyRate'] as num?)?.toDouble(),
-      currency: data['currency'] as String?,
+      currency: (data['currency'] as String?)?.trim().isNotEmpty == true
+          ? data['currency'] as String?
+          : data['currencyCode'] as String?,
       colorHex: data['colorHex'] as String?,
       isArchived: data['isArchived'] as bool? ?? false,
       createdAt: _ts(data['createdAt']),

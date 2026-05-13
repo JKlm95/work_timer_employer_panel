@@ -111,10 +111,18 @@ Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. 
 4. Dopasowanie workspace (email + slug + domena pracodawcy).
 5. Zapis w `trackedEmployees`.
 
+## Wpisy czasu — timesheet pracodawcy
+
+- Na ekranie **szczegółów pracownika** (`EmployeeDetailScreen`) panel pokazuje **timesheet miesięczny**: filtry, sortowanie, podsumowanie oraz **dodawanie / edycja / soft delete / przywracanie** wpisów w `users/{employeeUid}/entries/{entryId}`.
+- **Usuwanie** = wyłącznie **soft delete** (`isDeleted: true`, `updatedAt`), bez hard `delete` w Firestore.
+- **Kwoty** w tabeli i w `ReportCalculationService.estimatedAmountByCurrency` (dla wpisów `work` billable) liczą się jako:  
+  `godziny × hourlyRate workspace × billingRatePercent / 100` (brak stawki → „No rate” / „—” w UI).
+- **Eksporty CSV/PDF** nie są częścią tego modułu timesheet (osobne ekrany raportów bez zmian w zakresie eksportu z tego zadania).
+
 ## Obliczenia raportów (`ReportCalculationService`)
 
 - Czas z `end - start`; pomijane `isDeleted` i brak `end` (poza statusem „Working”).
-- Kwoty dla wpisów billable; waluty bez konwersji.
+- Kwoty dla wpisów billable: `duration × hourlyRate × (billingRatePercent ?? 100) / 100`; waluty bez konwersji.
 
 ## Eksport CSV
 

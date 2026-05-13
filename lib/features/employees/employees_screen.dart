@@ -299,7 +299,9 @@ class _EmployeesTableState extends State<_EmployeesTable> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Material(
-                color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.45),
+                color: Theme.of(
+                  context,
+                ).colorScheme.errorContainer.withValues(alpha: 0.45),
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
                   padding: const EdgeInsets.all(12),

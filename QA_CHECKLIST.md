@@ -8,6 +8,18 @@ Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (A
 - [ ] **Dodanie pracownika po e-mailu** — poprawna domena + firma/slug; sukces → wpis na liście; błąd → czytelny komunikat („Employee not found” gdy brak indeksu).
 - [ ] **Profil pracownika** — wejście w szczegóły z listy: nazwa, firma, grupy, presence, ostatnia aktywność, karty projektów.
 
+## Timesheet (szczegóły pracownika)
+
+- [ ] **Miesiąc** — przełącznik miesiąca ładuje wpisy z `users/{uid}/entries` (stream); loading / empty („No entries in this month”).
+- [ ] **Filtry** — workspace, typ wpisu, billable, „Show deleted”, wyszukiwarka po tytule zadania / notatce; pusty wynik → „No entries match current filters”.
+- [ ] **Sortowanie** — newest / oldest / duration / amount działa bez przeładowania strony.
+- [ ] **Kwota** — przy braku `hourlyRate` lub workspace: „No rate” / „—”; tooltip z powodem; breakdown typu `8h × 50 PLN × 80% = 320 PLN` gdy dane kompletne.
+- [ ] **Podsumowanie** — suma czasu, billable / non-billable, szacunek po walutach, breakdown po `entryType` i `billingRatePercent`.
+- [ ] **Dodaj wpis** — formularz (workspace, data, start/end, typ, %, billable, task, note); walidacja `start < end`; zapis → snackbar; błąd → snackbar, brak czerwonego ekranu.
+- [ ] **Edycja** — zmiana pól i zapis; `editedAt` / `editedBy` jeśli reguły na to pozwalają.
+- [ ] **Soft delete** — potwierdzenie dialogiem; wpis znika z widoku domyślnego; z „Show deleted” widoczny + **Restore** przywraca.
+- [ ] **Brak workspace’ów** — sensowny komunikat („This employee has no workspaces”) i brak crasha przy dodawaniu wpisu.
+
 ## Live status (mobile ↔ web)
 
 - [ ] **Start timera na mobile** → na web badge **Working** (`timerState` = running).

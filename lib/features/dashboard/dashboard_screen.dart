@@ -571,7 +571,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 final scheme = Theme.of(context).colorScheme;
                                 final errorBanner = snap.hasError
                                     ? Material(
-                                        color: scheme.errorContainer.withValues(alpha: 0.5),
+                                        color: scheme.errorContainer.withValues(
+                                          alpha: 0.5,
+                                        ),
                                         borderRadius: BorderRadius.circular(12),
                                         child: Padding(
                                           padding: const EdgeInsets.all(12),

@@ -14,6 +14,7 @@ import '../../models/workspace.dart' as ws;
 import '../../services/firestore_service.dart';
 import '../../services/report_calculation_service.dart';
 import 'widgets/edit_workspace_billing_dialog.dart';
+import 'widgets/employee_timesheet_panel.dart';
 
 class EmployeeDetailScreen extends StatefulWidget {
   const EmployeeDetailScreen({
@@ -464,6 +465,13 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                       ),
                                     );
                                   }),
+                                const SizedBox(height: 24),
+                                EmployeeTimesheetPanel(
+                                  firestore: widget.firestore,
+                                  employerUid: uid,
+                                  employeeUid: tr.employeeUid,
+                                  workspaces: workspaces,
+                                ),
                               ],
                             ),
                           ),

@@ -24,9 +24,11 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 ### `users/{employeeUid}/entries/{entryId}`
 
-- **Źródło prawdy:** tak — wpisy czasu (mobile).
-- **Czyta:** panel (raporty, dashboard, szczegóły pracownika). Odczyty statystyk dashboardu mogą używać **`Source.server`**, żeby uniknąć przestarzałego cache przeglądarki.
-- **Zapisuje:** panel **nie** (MVP); wyjątkiem jest wyłącznie dane po stronie pracodawcy w innych ścieżkach.
+- **Źródło prawdy:** tak — wpisy czasu (mobile + ewentualnie zapis z panelu pracodawcy).
+- **Czyta:** panel (raporty, dashboard, **timesheet** na karcie pracownika).
+- **Zapisuje:** **mobile** (domyślnie) oraz **pracodawca** z panelu — **tylko** gdy istnieje `employers/{employerUid}/trackedEmployeeUids/{employeeUid}` (patrz `firestore.rules`). Dozwolone operacje: **create** / **update** (w tym **soft delete**: `isDeleted: true`, **restore**: `isDeleted: false`). **Hard delete** (`delete`) jest zabroniony w regułach.
+- **Kwota w panelu:** szacunek `duration × workspace.hourlyRate × (billingRatePercent ?? 100) / 100` dla zamkniętych wpisów (szczegóły w `lib/core/utils/entry_amount_breakdown.dart` i `ReportCalculationService.estimatedAmountByCurrency`).
+- **Pola audytu (opcjonalne):** `editedAt`, `editedBy`, `createdBy`, `createdVia` — ustawiane przy zapisie z panelu (`createdVia: employer_panel`), jeśli reguły i payload to przepuszczą.
 
 ### `users/{employeeUid}/workspaces/{workspaceId}`
 
@@ -52,7 +54,7 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 | Obszar | Truth | Panel |
 |--------|--------|--------|
-| Wpisy czasu | `users/.../entries` | read |
+| Wpisy czasu | `users/.../entries` | read + **CRUD (create/update, soft delete)** dla śledzonych pracowników |
 | Projekty / stawki | `users/.../workspaces` | read + MVP write billing |
 | Live timer / presence | `users/.../live/status` | read only |
 | Lista śledzonych | `employers/.../trackedEmployees` | read/write |
@@ -62,4 +64,4 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 ## Spójność z mobile
 
-Mobile musi utrzymywać: **`userEmailIndex`**, **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z tym samym modelem pól, którego używa panel (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`).
+Mobile musi utrzymywać: **`userEmailIndex`**, **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z tym samym modelem pól, którego używa panel (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`, `billingRatePercent`, pola audytu jeśli używane). Panel pracodawcy może **dopisywać i poprawiać** wpisy w `entries` u śledzonych pracowników — zgodnie z `firestore.rules`.

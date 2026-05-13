@@ -67,7 +67,10 @@ class ReportCalculationService {
       if (d == null) continue;
       final currency = (ws?.currency ?? 'PLN').toUpperCase();
       final hours = d.inMinutes / 60.0;
-      map[currency] = (map[currency] ?? 0) + hours * rate;
+      final pct = e.billingRatePercent ?? 100.0;
+      if (pct <= 0) continue;
+      final amount = hours * rate * pct / 100.0;
+      map[currency] = (map[currency] ?? 0) + amount;
     }
     return map;
   }

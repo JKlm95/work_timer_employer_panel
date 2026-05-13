@@ -30,6 +30,64 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedEmployeeUids/$(employeeUid));
     }
 
+    // Employer panel may create/update time entries (soft delete via isDeleted); no hard deletes.
+    function employerEntryBillingPercentOk() {
+      return !('billingRatePercent' in request.resource.data) ||
+        (request.resource.data.billingRatePercent is int &&
+          (request.resource.data.billingRatePercent == 50 ||
+            request.resource.data.billingRatePercent == 80 ||
+            request.resource.data.billingRatePercent == 100 ||
+            request.resource.data.billingRatePercent == 150 ||
+            request.resource.data.billingRatePercent == 200)) ||
+        (request.resource.data.billingRatePercent is float &&
+          (request.resource.data.billingRatePercent == 50.0 ||
+            request.resource.data.billingRatePercent == 80.0 ||
+            request.resource.data.billingRatePercent == 100.0 ||
+            request.resource.data.billingRatePercent == 150.0 ||
+            request.resource.data.billingRatePercent == 200.0));
+    }
+
+    function employerEntryCoreFieldsValid() {
+      let e = request.resource.data;
+      return e.workspaceId is string &&
+        e.workspaceId.size() > 0 &&
+        e.workspaceId.size() <= 128 &&
+        e.start is timestamp &&
+        e.updatedAt is timestamp &&
+        e.isDeleted is bool &&
+        (!('end' in e) || e.end == null || (e.end is timestamp && e.end > e.start)) &&
+        (!('mode' in e) || (e.mode is string && e.mode.size() <= 64)) &&
+        (!('taskTitle' in e) || (e.taskTitle is string && e.taskTitle.size() <= 4000)) &&
+        (!('note' in e) || (e.note is string && e.note.size() <= 4000)) &&
+        (!('entryType' in e) || (e.entryType is string && e.entryType.size() <= 64)) &&
+        (!('createdVia' in e) || (e.createdVia is string && e.createdVia.size() <= 64)) &&
+        (!('createdBy' in e) || (e.createdBy is string && e.createdBy.size() <= 128)) &&
+        (!('editedBy' in e) || (e.editedBy is string && e.editedBy.size() <= 128)) &&
+        (!('editedAt' in e) || e.editedAt is timestamp) &&
+        (!('isBillable' in e) || e.isBillable is bool) &&
+        employerEntryBillingPercentOk();
+    }
+
+    function employerEntryCreateValid() {
+      let e = request.resource.data;
+      return employerEntryCoreFieldsValid() &&
+        e.createdBy == request.auth.uid &&
+        e.createdVia == 'employer_panel';
+    }
+
+    function employerEntryUpdateValid() {
+      return employerEntryCoreFieldsValid() &&
+        (!('editedBy' in request.resource.data) ||
+          request.resource.data.editedBy == request.auth.uid);
+    }
+
+    /// Employee writes their own `users/{userId}/entries` (mobile). Same field shape as employer edits.
+    function employeeOwnTimeEntryWrite() {
+      return request.auth != null &&
+        request.auth.uid == userId &&
+        employerEntryCoreFieldsValid();
+    }
+
     match /users/{userId} {
       match /live/status {
         allow read: if employerTracksUser(userId);
@@ -40,8 +98,13 @@ service cloud.firestore {
         allow write: if false;
       }
       match /entries/{eid} {
-        allow read: if employerTracksUser(userId);
-        allow write: if false;
+        allow read: if request.auth != null &&
+          (request.auth.uid == userId || employerTracksUser(userId));
+        allow create: if employeeOwnTimeEntryWrite() ||
+          (employerTracksUser(userId) && employerEntryCreateValid());
+        allow update: if employeeOwnTimeEntryWrite() ||
+          (employerTracksUser(userId) && employerEntryUpdateValid());
+        allow delete: if false;
       }
       match /{document=**} {
         allow read: if false;
