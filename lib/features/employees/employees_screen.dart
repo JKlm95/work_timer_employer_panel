@@ -71,9 +71,29 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
         return StreamBuilder<List<EmployerGroup>>(
           stream: widget.firestore.groupsStream(uid),
           builder: (context, groupsSnap) {
+            if (trackedSnap.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _EmployeesLoadError(
+                  title: 'Could not load employees',
+                  detail: '${trackedSnap.error}',
+                ),
+              );
+            }
+            if (groupsSnap.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _EmployeesLoadError(
+                  title: 'Could not load groups',
+                  detail: '${groupsSnap.error}',
+                ),
+              );
+            }
+
             final tracked = trackedSnap.data ?? [];
             final groups = groupsSnap.data ?? [];
-            if (trackedSnap.connectionState == ConnectionState.waiting && !trackedSnap.hasData) {
+            if (trackedSnap.connectionState == ConnectionState.waiting &&
+                !trackedSnap.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
@@ -91,7 +111,8 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                         children: [
                           Text(
                             'Employees',
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           const Spacer(),
                           if (_lastMonthRefresh != null)
@@ -99,19 +120,26 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                               padding: const EdgeInsets.only(right: 12),
                               child: Text(
                                 'Last updated: ${DateFormat.Hms().format(_lastMonthRefresh!)}',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
                               ),
                             ),
                           IconButton(
                             tooltip: 'Refresh data',
-                            onPressed: tracked.isEmpty || _monthRefreshing ? null : () => _manualMonthRefresh(uid),
+                            onPressed: tracked.isEmpty || _monthRefreshing
+                                ? null
+                                : () => _manualMonthRefresh(uid),
                             icon: _monthRefreshing
                                 ? const SizedBox(
                                     width: 22,
                                     height: 22,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   )
                                 : const Icon(Icons.refresh),
                           ),
@@ -120,15 +148,22 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                             onPressed: () async {
                               final messenger = ScaffoldMessenger.of(context);
                               messenger.showSnackBar(
-                                const SnackBar(content: Text('Syncing names from directory…')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Syncing names from directory…',
+                                  ),
+                                ),
                               );
-                              final n = await widget.firestore.syncTrackedEmployeeProfilesFromIndex(uid);
+                              final n = await widget.firestore
+                                  .syncTrackedEmployeeProfilesFromIndex(uid);
                               if (!context.mounted) return;
                               messenger.hideCurrentSnackBar();
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    n == 0 ? 'No name updates (index empty or already up to date).' : 'Updated $n employee(s).',
+                                    n == 0
+                                        ? 'No name updates (index empty or already up to date).'
+                                        : 'Updated $n employee(s).',
                                   ),
                                 ),
                               );
@@ -138,7 +173,10 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                           ),
                           const SizedBox(width: 12),
                           FilledButton.icon(
-                            onPressed: () => showAddEmployeeDialog(context, widget.firestore),
+                            onPressed: () => showAddEmployeeDialog(
+                              context,
+                              widget.firestore,
+                            ),
                             icon: const Icon(Icons.person_add_alt_1_outlined),
                             label: const Text('Add employee'),
                           ),
@@ -157,22 +195,38 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                                         Text(
                                           'No employees tracked yet.',
                                           textAlign: TextAlign.center,
-                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          ),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
                                           'Add an employee by work email and company name.',
                                           textAlign: TextAlign.center,
-                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          ),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
                                         ),
                                         const SizedBox(height: 24),
                                         FilledButton.icon(
-                                          onPressed: () => showAddEmployeeDialog(context, widget.firestore),
-                                          icon: const Icon(Icons.person_add_alt_1_outlined),
+                                          onPressed: () =>
+                                              showAddEmployeeDialog(
+                                                context,
+                                                widget.firestore,
+                                              ),
+                                          icon: const Icon(
+                                            Icons.person_add_alt_1_outlined,
+                                          ),
                                           label: const Text('Add employee'),
                                         ),
                                       ],
@@ -185,7 +239,10 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   child: ConstrainedBox(
-                                    constraints: BoxConstraints(minWidth: MediaQuery.sizeOf(context).width - 48),
+                                    constraints: BoxConstraints(
+                                      minWidth:
+                                          MediaQuery.sizeOf(context).width - 48,
+                                    ),
                                     child: _EmployeesTable(
                                       key: ValueKey(
                                         '${tracked.map((e) => e.id).join(',')}_$_monthRefreshNonce',
@@ -237,131 +294,212 @@ class _EmployeesTableState extends State<_EmployeesTable> {
     return FutureBuilder<Map<String, _EmpMonth>>(
       future: _loadMonth(widget.tracked, widget.firestore),
       builder: (context, snap) {
+        if (snap.hasError) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Could not load monthly totals for the table. Hours and amounts may show as 0.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onErrorContainer,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildTable(
+                context,
+                snap.data ?? const {},
+                snap.connectionState == ConnectionState.waiting,
+              ),
+            ],
+          );
+        }
         final month = snap.data ?? {};
         final loading = snap.connectionState == ConnectionState.waiting;
-        return DataTable(
-          headingRowHeight: 48,
-          dataRowMinHeight: 52,
-          dataRowMaxHeight: 88,
-          columns: const [
-            DataColumn(label: Text('Employee')),
-            DataColumn(label: Text('Status')),
-            DataColumn(label: Text('Company')),
-            DataColumn(label: Text('Groups')),
-            DataColumn(label: Text('Hours (month)')),
-            DataColumn(label: Text('Est. amount')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: [
-            for (final t in widget.tracked)
-              DataRow(
-                cells: [
-                  DataCell(
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                          child: Text(
-                            employeeInitials(t),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                employeeFullName(t),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              if (employeeShowEmailAsSubtitle(t))
-                                Text(
-                                  t.employeeEmail,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  DataCell(
-                    EmployeePresenceBadge(
-                      firestore: widget.firestore,
-                      tracked: t,
-                      compact: true,
-                    ),
-                  ),
-                  DataCell(Text(t.companyName)),
-                  DataCell(Text(_groupLabels(t, widget.groups))),
-                  DataCell(Text(loading ? '…' : (month[t.id]?.hours.toStringAsFixed(1) ?? '0'))),
-                  DataCell(
-                    Text(
-                      loading ? '…' : _money(month[t.id]?.amountByCurrency ?? const {}),
-                    ),
-                  ),
-                  DataCell(
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          onPressed: () => context.go('/employees/detail/${t.id}'),
-                          child: const Text('View'),
-                        ),
-                        TextButton(
-                          onPressed: () => showAssignGroupsSheet(
-                            context,
-                            firestore: widget.firestore,
-                            employerUid: widget.employerUid,
-                            tracked: t,
-                            allGroups: widget.groups,
-                          ),
-                          child: const Text('Groups'),
-                        ),
-                        TextButton(
-                          onPressed: () async {
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (c) => AlertDialog(
-                                title: const Text('Remove employee'),
-                                content: const Text(
-                                  'Remove employee from employer panel? '
-                                  'This only removes them from your list — their account, projects and time entries are not deleted.',
-                                ),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                                  FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove')),
-                                ],
-                              ),
-                            );
-                            if (ok == true && context.mounted) {
-                              await widget.firestore.removeTrackedEmployee(widget.employerUid, t.id);
-                            }
-                          },
-                          child: Text('Remove', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        );
+        return _buildTable(context, month, loading);
       },
     );
   }
 
-  Future<Map<String, _EmpMonth>> _loadMonth(List<TrackedEmployee> tracked, FirestoreService fs) async {
+  Widget _buildTable(
+    BuildContext context,
+    Map<String, _EmpMonth> month,
+    bool loading,
+  ) {
+    return DataTable(
+      headingRowHeight: 48,
+      dataRowMinHeight: 52,
+      dataRowMaxHeight: 88,
+      columns: const [
+        DataColumn(label: Text('Employee')),
+        DataColumn(label: Text('Status')),
+        DataColumn(label: Text('Company')),
+        DataColumn(label: Text('Groups')),
+        DataColumn(label: Text('Hours (month)')),
+        DataColumn(label: Text('Est. amount')),
+        DataColumn(label: Text('Actions')),
+      ],
+      rows: [
+        for (final t in widget.tracked)
+          DataRow(
+            cells: [
+              DataCell(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
+                      child: Text(
+                        employeeInitials(t),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            employeeFullName(t),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (employeeShowEmailAsSubtitle(t))
+                            Text(
+                              t.employeeEmail,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              DataCell(
+                EmployeePresenceBadge(
+                  firestore: widget.firestore,
+                  tracked: t,
+                  compact: true,
+                ),
+              ),
+              DataCell(Text(t.companyName)),
+              DataCell(Text(_groupLabels(t, widget.groups))),
+              DataCell(
+                Text(
+                  loading
+                      ? '…'
+                      : (month[t.id]?.hours.toStringAsFixed(1) ?? '0'),
+                ),
+              ),
+              DataCell(
+                Text(
+                  loading
+                      ? '…'
+                      : _money(month[t.id]?.amountByCurrency ?? const {}),
+                ),
+              ),
+              DataCell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () => context.go('/employees/detail/${t.id}'),
+                      child: const Text('View'),
+                    ),
+                    TextButton(
+                      onPressed: () => showAssignGroupsSheet(
+                        context,
+                        firestore: widget.firestore,
+                        employerUid: widget.employerUid,
+                        tracked: t,
+                        allGroups: widget.groups,
+                      ),
+                      child: const Text('Groups'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: const Text('Remove employee'),
+                            content: const Text(
+                              'Remove employee from employer panel? '
+                              'This only removes them from your list — their account, projects and time entries are not deleted.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(c, false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(c, true),
+                                child: const Text('Remove'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (ok == true && context.mounted) {
+                          await widget.firestore.removeTrackedEmployee(
+                            widget.employerUid,
+                            t.id,
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Remove',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Future<Map<String, _EmpMonth>> _loadMonth(
+    List<TrackedEmployee> tracked,
+    FirestoreService fs,
+  ) async {
     final period = monthContaining(DateTime.now());
     final out = <String, _EmpMonth>{};
     for (final t in tracked) {
@@ -370,7 +508,8 @@ class _EmployeesTableState extends State<_EmployeesTable> {
       final wsMap = {for (final w in workspaces) w.id: w};
       final filtered = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
-        return wsMap[e.workspaceId]?.companySlug?.toLowerCase() == t.companySlug.toLowerCase();
+        return wsMap[e.workspaceId]?.companySlug?.toLowerCase() ==
+            t.companySlug.toLowerCase();
       }).toList();
       final hours = _calc.hoursForEntries(filtered);
       final money = _calc.estimatedAmountByCurrency(
@@ -390,7 +529,9 @@ class _EmployeesTableState extends State<_EmployeesTable> {
 
   static String _money(Map<String, double> m) {
     if (m.isEmpty) return '—';
-    return m.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
+    return m.entries
+        .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
+        .join(' · ');
   }
 }
 
@@ -399,4 +540,50 @@ class _EmpMonth {
 
   final double hours;
   final Map<String, double> amountByCurrency;
+}
+
+class _EmployeesLoadError extends StatelessWidget {
+  const _EmployeesLoadError({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    detail,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

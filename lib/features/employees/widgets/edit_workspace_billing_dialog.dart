@@ -11,7 +11,9 @@ Future<void> showEditWorkspaceBillingDialog(
   required Workspace workspace,
 }) async {
   final rateCtrl = TextEditingController(
-    text: workspace.hourlyRate != null ? workspace.hourlyRate!.toStringAsFixed(2) : '',
+    text: workspace.hourlyRate != null
+        ? workspace.hourlyRate!.toStringAsFixed(2)
+        : '',
   );
   var currency = (workspace.currency ?? 'PLN').toUpperCase();
   if (!const {'PLN', 'EUR', 'USD', 'GBP'}.contains(currency)) {
@@ -65,7 +67,9 @@ Future<void> showEditWorkspaceBillingDialog(
                       labelText: 'Hourly rate',
                       hintText: '0.00',
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
@@ -90,13 +94,21 @@ Future<void> showEditWorkspaceBillingDialog(
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 8),
-                    Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ],
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
               FilledButton(onPressed: save, child: const Text('Save')),
             ],
           );

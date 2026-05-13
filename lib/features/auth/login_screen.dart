@@ -78,14 +78,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.schedule_rounded, size: 48, color: scheme.primary),
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 48,
+                        color: scheme.primary,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'Work Timer',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -105,8 +108,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                         autofillHints: const [AutofillHints.email],
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Enter email';
-                          if (!v.contains('@')) return 'Enter a valid email';
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Enter email';
+                          }
+                          if (!v.contains('@')) {
+                            return 'Enter a valid email';
+                          }
                           return null;
                         },
                       ),
@@ -133,12 +140,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             padding: const EdgeInsets.all(12),
                             child: Row(
                               children: [
-                                Icon(Icons.error_outline, color: scheme.onErrorContainer),
+                                Icon(
+                                  Icons.error_outline,
+                                  color: scheme.onErrorContainer,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     _error!,
-                                    style: TextStyle(color: scheme.onErrorContainer),
+                                    style: TextStyle(
+                                      color: scheme.onErrorContainer,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -153,7 +165,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 height: 22,
                                 width: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Sign in'),
                       ),

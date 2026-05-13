@@ -20,11 +20,16 @@ class DashboardLiveStatusHost extends StatefulWidget {
 
   final List<TrackedEmployee> tracked;
   final FirestoreService firestore;
-  final Widget Function(BuildContext context, Map<String, EmployeeLiveStatus?> liveByUid) builder;
+  final Widget Function(
+    BuildContext context,
+    Map<String, EmployeeLiveStatus?> liveByUid,
+  )
+  builder;
   final Duration tickInterval;
 
   @override
-  State<DashboardLiveStatusHost> createState() => _DashboardLiveStatusHostState();
+  State<DashboardLiveStatusHost> createState() =>
+      _DashboardLiveStatusHostState();
 }
 
 class _DashboardLiveStatusHostState extends State<DashboardLiveStatusHost> {
@@ -66,19 +71,23 @@ class _DashboardLiveStatusHostState extends State<DashboardLiveStatusHost> {
       final uid = t.employeeUid;
       if (uid.isEmpty) continue;
       _subs.add(
-        widget.firestore.employeeLiveStatusStream(uid).listen(
-          (v) {
-            if (!mounted) return;
-            setState(() => _live[uid] = v);
-          },
-          onError: (Object e, StackTrace st) {
-            if (kDebugMode) {
-              debugPrint('[LiveStatus] stream subscription error uid=$uid $e\n$st');
-            }
-            if (!mounted) return;
-            setState(() => _live[uid] = null);
-          },
-        ),
+        widget.firestore
+            .employeeLiveStatusStream(uid)
+            .listen(
+              (v) {
+                if (!mounted) return;
+                setState(() => _live[uid] = v);
+              },
+              onError: (Object e, StackTrace st) {
+                if (kDebugMode) {
+                  debugPrint(
+                    '[LiveStatus] stream subscription error uid=$uid $e\n$st',
+                  );
+                }
+                if (!mounted) return;
+                setState(() => _live[uid] = null);
+              },
+            ),
       );
     }
   }
@@ -86,6 +95,9 @@ class _DashboardLiveStatusHostState extends State<DashboardLiveStatusHost> {
   @override
   Widget build(BuildContext context) {
     _resubscribeIfNeeded();
-    return widget.builder(context, Map<String, EmployeeLiveStatus?>.from(_live));
+    return widget.builder(
+      context,
+      Map<String, EmployeeLiveStatus?>.from(_live),
+    );
   }
 }

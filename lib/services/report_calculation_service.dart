@@ -23,8 +23,12 @@ class ReportCalculationService {
     }).toList();
 
     var filtered = list;
-    if (entryTypeFilter != null && entryTypeFilter.isNotEmpty && entryTypeFilter != 'all') {
-      filtered = filtered.where((e) => (e.entryType ?? 'work') == entryTypeFilter).toList();
+    if (entryTypeFilter != null &&
+        entryTypeFilter.isNotEmpty &&
+        entryTypeFilter != 'all') {
+      filtered = filtered
+          .where((e) => (e.entryType ?? 'work') == entryTypeFilter)
+          .toList();
     }
     if (billableOnly) {
       filtered = filtered.where((e) => e.effectiveBillable).toList();
@@ -32,7 +36,10 @@ class ReportCalculationService {
     return filtered;
   }
 
-  double hoursForEntries(List<WorkEntry> entries, {bool billableOnlyForWork = false}) {
+  double hoursForEntries(
+    List<WorkEntry> entries, {
+    bool billableOnlyForWork = false,
+  }) {
     var sum = 0.0;
     for (final e in entries) {
       if (!e.isWorkEntry) continue;
@@ -165,6 +172,7 @@ class PayrollLine extends Equatable {
 
   final String trackedId;
   final String employeeLabel;
+
   /// Shown under [employeeLabel] when different from the primary label (avoids duplicate email).
   final String? employeeEmailSubtitle;
   final String companyName;

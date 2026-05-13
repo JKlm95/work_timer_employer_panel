@@ -49,14 +49,27 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
       case DateRangePreset.custom:
         final r = _custom;
         if (r == null) return monthContaining(now);
-        final end = DateTime(r.end.year, r.end.month, r.end.day, 23, 59, 59, 999);
-        return ReportPeriod(start: DateTime(r.start.year, r.start.month, r.start.day), endInclusive: end);
+        final end = DateTime(
+          r.end.year,
+          r.end.month,
+          r.end.day,
+          23,
+          59,
+          59,
+          999,
+        );
+        return ReportPeriod(
+          start: DateTime(r.start.year, r.start.month, r.start.day),
+          endInclusive: end,
+        );
     }
   }
 
   Future<void> _pickCustomRange() async {
     final now = DateTime.now();
-    final initial = _custom ?? DateTimeRange(start: DateTime(now.year, now.month), end: now);
+    final initial =
+        _custom ??
+        DateTimeRange(start: DateTime(now.year, now.month), end: now);
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
@@ -94,11 +107,15 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
         final TrackedEmployee te = tracked;
 
         return FutureBuilder<List<ws.Workspace>>(
-          key: ValueKey('${te.employeeUid}_${widget.workspaceId}_$_workspaceReloadKey'),
+          key: ValueKey(
+            '${te.employeeUid}_${widget.workspaceId}_$_workspaceReloadKey',
+          ),
           future: widget.firestore.fetchEmployeeWorkspaces(te.employeeUid),
           builder: (context, wsSnap) {
             if (!wsSnap.hasData) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
             ws.Workspace? selectedWs;
             for (final w in wsSnap.data!) {
@@ -115,7 +132,10 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
             final period = _period();
 
             return FutureBuilder<List<WorkEntry>>(
-              future: widget.firestore.fetchEntriesInRange(te.employeeUid, period),
+              future: widget.firestore.fetchEntriesInRange(
+                te.employeeUid,
+                period,
+              ),
               builder: (context, entSnap) {
                 if (!entSnap.hasData) {
                   return Scaffold(
@@ -124,14 +144,20 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                   );
                 }
 
-                final raw = entSnap.data!.where((e) => e.workspaceId == widget.workspaceId).toList();
+                final raw = entSnap.data!
+                    .where((e) => e.workspaceId == widget.workspaceId)
+                    .toList();
                 final visible = _calc.visibleEntries(
                   raw,
                   period: period,
                   billableOnly: _billableOnly,
                   entryTypeFilter: _entryType,
                 );
-                final split = _calc.splitHours(raw.where((e) => e.workspaceId == widget.workspaceId).toList());
+                final split = _calc.splitHours(
+                  raw
+                      .where((e) => e.workspaceId == widget.workspaceId)
+                      .toList(),
+                );
                 final money = _calc.estimatedAmountByCurrency(
                   entries: visible.where((e) => e.isWorkEntry).toList(),
                   workspaceById: {workspace.id: workspace},
@@ -183,9 +209,12 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                           children: [
                             Text(
                               'Estimates use tracked hours and workspace hourly rates — not legal invoicing.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                             const SizedBox(height: 16),
                             Wrap(
@@ -195,9 +224,18 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                               children: [
                                 SegmentedButton<DateRangePreset>(
                                   segments: const [
-                                    ButtonSegment(value: DateRangePreset.thisMonth, label: Text('This month')),
-                                    ButtonSegment(value: DateRangePreset.previousMonth, label: Text('Previous')),
-                                    ButtonSegment(value: DateRangePreset.custom, label: Text('Custom')),
+                                    ButtonSegment(
+                                      value: DateRangePreset.thisMonth,
+                                      label: Text('This month'),
+                                    ),
+                                    ButtonSegment(
+                                      value: DateRangePreset.previousMonth,
+                                      label: Text('Previous'),
+                                    ),
+                                    ButtonSegment(
+                                      value: DateRangePreset.custom,
+                                      label: Text('Custom'),
+                                    ),
                                   ],
                                   selected: {_preset},
                                   onSelectionChanged: (s) {
@@ -217,19 +255,39 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                                 FilterChip(
                                   label: const Text('Billable only'),
                                   selected: _billableOnly,
-                                  onSelected: (v) => setState(() => _billableOnly = v),
+                                  onSelected: (v) =>
+                                      setState(() => _billableOnly = v),
                                 ),
                                 DropdownButton<String>(
                                   value: _entryType,
                                   items: const [
-                                    DropdownMenuItem(value: 'all', child: Text('All types')),
-                                    DropdownMenuItem(value: 'work', child: Text('Work')),
-                                    DropdownMenuItem(value: 'vacation', child: Text('Vacation')),
-                                    DropdownMenuItem(value: 'sickLeave', child: Text('Sick leave')),
-                                    DropdownMenuItem(value: 'businessTrip', child: Text('Business trip')),
-                                    DropdownMenuItem(value: 'other', child: Text('Other')),
+                                    DropdownMenuItem(
+                                      value: 'all',
+                                      child: Text('All types'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'work',
+                                      child: Text('Work'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'vacation',
+                                      child: Text('Vacation'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'sickLeave',
+                                      child: Text('Sick leave'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'businessTrip',
+                                      child: Text('Business trip'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'other',
+                                      child: Text('Other'),
+                                    ),
                                   ],
-                                  onChanged: (v) => setState(() => _entryType = v ?? 'all'),
+                                  onChanged: (v) =>
+                                      setState(() => _entryType = v ?? 'all'),
                                 ),
                               ],
                             ),
@@ -239,7 +297,10 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                                 final w = c.maxWidth;
                                 final cols = w > 900 ? 3 : 1;
                                 final cards = [
-                                  _SummaryTile(title: 'Total hours', value: totalHours.toStringAsFixed(2)),
+                                  _SummaryTile(
+                                    title: 'Total hours',
+                                    value: totalHours.toStringAsFixed(2),
+                                  ),
                                   _SummaryTile(
                                     title: 'Billable / non-billable (work)',
                                     value:
@@ -247,11 +308,19 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                                   ),
                                   _SummaryTile(
                                     title: 'Vacation / sick / trip entries',
-                                    value: '${split.vacationEntries} / ${split.sickEntries} / ${split.businessTripEntries}',
+                                    value:
+                                        '${split.vacationEntries} / ${split.sickEntries} / ${split.businessTripEntries}',
                                   ),
                                   _SummaryTile(
                                     title: 'Estimated amount',
-                                    value: money.isEmpty ? '—' : money.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · '),
+                                    value: money.isEmpty
+                                        ? '—'
+                                        : money.entries
+                                              .map(
+                                                (e) =>
+                                                    '${e.key} ${e.value.toStringAsFixed(2)}',
+                                              )
+                                              .join(' · '),
                                   ),
                                 ];
                                 return Wrap(
@@ -259,7 +328,10 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                                   runSpacing: 12,
                                   children: [
                                     for (var i = 0; i < cards.length; i++)
-                                      SizedBox(width: cols == 1 ? w : (w - 24) / 2, child: cards[i]),
+                                      SizedBox(
+                                        width: cols == 1 ? w : (w - 24) / 2,
+                                        child: cards[i],
+                                      ),
                                   ],
                                 );
                               },
@@ -285,15 +357,41 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                                     for (final e in visible)
                                       DataRow(
                                         cells: [
-                                          DataCell(Text(DateFormat.yMMMd().format(e.start))),
-                                          DataCell(Text(DateFormat.Hm().format(e.start))),
-                                          DataCell(Text(e.end != null ? DateFormat.Hm().format(e.end!) : '—')),
+                                          DataCell(
+                                            Text(
+                                              DateFormat.yMMMd().format(
+                                                e.start,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              DateFormat.Hm().format(e.start),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              e.end != null
+                                                  ? DateFormat.Hm().format(
+                                                      e.end!,
+                                                    )
+                                                  : '—',
+                                            ),
+                                          ),
                                           DataCell(Text(_dur(e))),
                                           DataCell(Text(e.entryType ?? 'work')),
-                                          DataCell(Text(e.effectiveBillable ? 'yes' : 'no')),
+                                          DataCell(
+                                            Text(
+                                              e.effectiveBillable
+                                                  ? 'yes'
+                                                  : 'no',
+                                            ),
+                                          ),
                                           DataCell(Text(e.taskTitle ?? '')),
                                           DataCell(Text(e.note ?? '')),
-                                          DataCell(Text(_amountCell(e, workspace))),
+                                          DataCell(
+                                            Text(_amountCell(e, workspace)),
+                                          ),
                                         ],
                                       ),
                                   ],
@@ -349,7 +447,12 @@ class _SummaryTile extends StatelessWidget {
           children: [
             Text(title, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 6),
-            Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+            Text(
+              value,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
           ],
         ),
       ),

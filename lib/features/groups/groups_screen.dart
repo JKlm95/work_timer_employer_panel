@@ -29,7 +29,9 @@ class GroupsScreen extends StatelessWidget {
                 children: [
                   Text(
                     'Groups',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const Spacer(),
                   FilledButton.icon(
@@ -51,12 +53,77 @@ class GroupsScreen extends StatelessWidget {
                 child: StreamBuilder<List<TrackedEmployee>>(
                   stream: firestore.trackedEmployeesStream(uid),
                   builder: (context, trackedSnap) {
+                    if (trackedSnap.hasError) {
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.cloud_off_outlined,
+                                size: 40,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Could not load employees',
+                                style: Theme.of(context).textTheme.titleSmall,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              SelectableText(
+                                '${trackedSnap.error}',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                     final tracked = trackedSnap.data ?? [];
                     return StreamBuilder<List<EmployerGroup>>(
                       stream: firestore.groupsStream(uid),
                       builder: (context, snap) {
-                        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
+                        if (snap.hasError) {
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.cloud_off_outlined,
+                                    size: 40,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Could not load groups',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SelectableText(
+                                    '${snap.error}',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        if (snap.connectionState == ConnectionState.waiting &&
+                            !snap.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
                         }
                         final groups = snap.data ?? [];
                         if (groups.isEmpty) {
@@ -70,21 +137,34 @@ class GroupsScreen extends StatelessWidget {
                                     Text(
                                       'No groups created yet.',
                                       textAlign: TextAlign.center,
-                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       'Create groups to organize employees by project, team or department.',
                                       textAlign: TextAlign.center,
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
                                     ),
                                     const SizedBox(height: 24),
                                     FilledButton.icon(
-                                      onPressed: () => showCreateGroupDialog(context, firestore),
+                                      onPressed: () => showCreateGroupDialog(
+                                        context,
+                                        firestore,
+                                      ),
                                       icon: const Icon(Icons.add),
                                       label: const Text('Create group'),
                                     ),
@@ -96,10 +176,13 @@ class GroupsScreen extends StatelessWidget {
                         }
                         return ListView.separated(
                           itemCount: groups.length,
-                          separatorBuilder: (context, _) => const SizedBox(height: 10),
+                          separatorBuilder: (context, _) =>
+                              const SizedBox(height: 10),
                           itemBuilder: (context, i) {
                             final g = groups[i];
-                            final count = tracked.where((t) => t.groupIds.contains(g.id)).length;
+                            final count = tracked
+                                .where((t) => t.groupIds.contains(g.id))
+                                .length;
                             return Card(
                               child: ListTile(
                                 leading: CircleAvatar(
@@ -120,7 +203,12 @@ class GroupsScreen extends StatelessWidget {
                                     ),
                                     IconButton(
                                       tooltip: 'Delete',
-                                      icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
                                       onPressed: () async {
                                         final ok = await showDialog<bool>(
                                           context: context,
@@ -130,13 +218,24 @@ class GroupsScreen extends StatelessWidget {
                                               'Employees will be unassigned from this group.',
                                             ),
                                             actions: [
-                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(c, false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(c, true),
+                                                child: const Text('Delete'),
+                                              ),
                                             ],
                                           ),
                                         );
                                         if (ok == true && context.mounted) {
-                                          await firestore.deleteGroup(uid, g.id);
+                                          await firestore.deleteGroup(
+                                            uid,
+                                            g.id,
+                                          );
                                         }
                                       },
                                     ),
@@ -168,7 +267,11 @@ class GroupsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _edit(BuildContext context, String employerUid, EmployerGroup g) async {
+  Future<void> _edit(
+    BuildContext context,
+    String employerUid,
+    EmployerGroup g,
+  ) async {
     final nameCtrl = TextEditingController(text: g.name);
     final colorCtrl = TextEditingController(text: g.colorHex);
     await showDialog<void>(
@@ -178,13 +281,22 @@ class GroupsScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: colorCtrl, decoration: const InputDecoration(labelText: 'Color (hex)')),
+            TextField(
+              controller: colorCtrl,
+              decoration: const InputDecoration(labelText: 'Color (hex)'),
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               var hex = colorCtrl.text.trim();

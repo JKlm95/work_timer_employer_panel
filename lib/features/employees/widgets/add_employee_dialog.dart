@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../services/firestore_service.dart';
 
-Future<void> showAddEmployeeDialog(BuildContext context, FirestoreService firestore) async {
+Future<void> showAddEmployeeDialog(
+  BuildContext context,
+  FirestoreService firestore,
+) async {
   final emailCtrl = TextEditingController();
   final companyCtrl = TextEditingController();
   bool loading = false;
@@ -80,7 +83,12 @@ Future<void> showAddEmployeeDialog(BuildContext context, FirestoreService firest
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 12),
-                    Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ],
                 ],
               ),

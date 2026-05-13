@@ -58,7 +58,9 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
             var tracked = trackedAll;
             if (_groupId != null && _groupId!.isNotEmpty) {
-              tracked = tracked.where((t) => t.groupIds.contains(_groupId)).toList();
+              tracked = tracked
+                  .where((t) => t.groupIds.contains(_groupId))
+                  .toList();
             }
             if (_trackedId != null && _trackedId!.isNotEmpty) {
               tracked = tracked.where((t) => t.id == _trackedId).toList();
@@ -80,7 +82,8 @@ class _PayrollScreenState extends State<PayrollScreen> {
                           Expanded(
                             child: Text(
                               'Monthly work report',
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                           ),
                           IconButton(
@@ -88,9 +91,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             onPressed: tracked.isEmpty
                                 ? null
                                 : () async {
-                                    final bundle = await _buildLines(tracked, period);
-                                    final fname = 'payroll-${DateFormat('yyyy-MM').format(_month)}.csv';
-                                    _export.downloadPayrollCsv(filename: fname, lines: bundle.lines);
+                                    final bundle = await _buildLines(
+                                      tracked,
+                                      period,
+                                    );
+                                    final fname =
+                                        'payroll-${DateFormat('yyyy-MM').format(_month)}.csv';
+                                    _export.downloadPayrollCsv(
+                                      filename: fname,
+                                      lines: bundle.lines,
+                                    );
                                   },
                             icon: const Icon(Icons.download_outlined),
                           ),
@@ -126,9 +136,15 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             value: _groupId,
                             hint: const Text('All groups'),
                             items: [
-                              const DropdownMenuItem<String?>(value: null, child: Text('All groups')),
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('All groups'),
+                              ),
                               for (final g in groups)
-                                DropdownMenuItem(value: g.id, child: Text(g.name)),
+                                DropdownMenuItem(
+                                  value: g.id,
+                                  child: Text(g.name),
+                                ),
                             ],
                             onChanged: (v) => setState(() => _groupId = v),
                           ),
@@ -136,15 +152,19 @@ class _PayrollScreenState extends State<PayrollScreen> {
                             value: _trackedId,
                             hint: const Text('All employees'),
                             items: [
-                              const DropdownMenuItem<String?>(value: null, child: Text('All employees')),
-                                              for (final t in trackedAll)
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('All employees'),
+                              ),
+                              for (final t in trackedAll)
                                 DropdownMenuItem<String?>(
                                   value: t.id,
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: employeeShowEmailAsSubtitle(t)
                                         ? Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Text(
@@ -156,9 +176,14 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                                 t.employeeEmail,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                ),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
                                               ),
                                             ],
                                           )
@@ -171,24 +196,44 @@ class _PayrollScreenState extends State<PayrollScreen> {
                           DropdownButton<String>(
                             value: _currency,
                             items: const [
-                              DropdownMenuItem(value: 'all', child: Text('All currencies')),
-                              DropdownMenuItem(value: 'PLN', child: Text('PLN')),
-                              DropdownMenuItem(value: 'EUR', child: Text('EUR')),
-                              DropdownMenuItem(value: 'USD', child: Text('USD')),
-                              DropdownMenuItem(value: 'GBP', child: Text('GBP')),
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All currencies'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'PLN',
+                                child: Text('PLN'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'EUR',
+                                child: Text('EUR'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'USD',
+                                child: Text('USD'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'GBP',
+                                child: Text('GBP'),
+                              ),
                             ],
-                            onChanged: (v) => setState(() => _currency = v ?? 'all'),
+                            onChanged: (v) =>
+                                setState(() => _currency = v ?? 'all'),
                           ),
                           FilterChip(
                             label: const Text('Billable only'),
                             selected: _billableOnly,
-                            onSelected: (v) => setState(() => _billableOnly = v),
+                            onSelected: (v) =>
+                                setState(() => _billableOnly = v),
                           ),
                         ],
                       ),
                       const SizedBox(height: 20),
                       Expanded(
-                        child: trackedSnap.connectionState == ConnectionState.waiting && trackedAll.isEmpty
+                        child:
+                            trackedSnap.connectionState ==
+                                    ConnectionState.waiting &&
+                                trackedAll.isEmpty
                             ? const Center(child: CircularProgressIndicator())
                             : tracked.isEmpty
                             ? Card(
@@ -201,14 +246,22 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                         Text(
                                           'No payroll data for selected period.',
                                           textAlign: TextAlign.center,
-                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          ),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
                                         ),
                                         const SizedBox(height: 16),
                                         OutlinedButton.icon(
-                                          onPressed: () => context.go('/employees'),
-                                          icon: const Icon(Icons.people_outline),
+                                          onPressed: () =>
+                                              context.go('/employees'),
+                                          icon: const Icon(
+                                            Icons.people_outline,
+                                          ),
                                           label: const Text('Go to Employees'),
                                         ),
                                       ],
@@ -220,64 +273,94 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                 future: _buildLines(tracked, period),
                                 builder: (context, fut) {
                                   if (!fut.hasData) {
-                                    return const Center(child: CircularProgressIndicator());
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
                                   }
                                   var lines = fut.data!.lines;
                                   if (_currency != 'all') {
-                                    lines = lines
-                                        .map((line) {
-                                          final m = Map<String, double>.from(line.amountByCurrency);
-                                          for (final k in m.keys.toList()) {
-                                            if (k != _currency) m.remove(k);
-                                          }
-                                          return PayrollLine(
-                                            trackedId: line.trackedId,
-                                            employeeLabel: line.employeeLabel,
-                                            employeeEmailSubtitle: line.employeeEmailSubtitle,
-                                            companyName: line.companyName,
-                                            groupLabels: line.groupLabels,
-                                            totalHours: line.totalHours,
-                                            billableHours: line.billableHours,
-                                            nonBillableHours: line.nonBillableHours,
-                                            vacationCount: line.vacationCount,
-                                            sickCount: line.sickCount,
-                                            amountByCurrency: m,
-                                            amountDisplay: _payrollAmountDisplay(m, _currency),
-                                            currencyDisplay: _payrollCurrencyDisplay(m, _currency),
-                                          );
-                                        })
-                                        .toList();
+                                    lines = lines.map((line) {
+                                      final m = Map<String, double>.from(
+                                        line.amountByCurrency,
+                                      );
+                                      for (final k in m.keys.toList()) {
+                                        if (k != _currency) m.remove(k);
+                                      }
+                                      return PayrollLine(
+                                        trackedId: line.trackedId,
+                                        employeeLabel: line.employeeLabel,
+                                        employeeEmailSubtitle:
+                                            line.employeeEmailSubtitle,
+                                        companyName: line.companyName,
+                                        groupLabels: line.groupLabels,
+                                        totalHours: line.totalHours,
+                                        billableHours: line.billableHours,
+                                        nonBillableHours: line.nonBillableHours,
+                                        vacationCount: line.vacationCount,
+                                        sickCount: line.sickCount,
+                                        amountByCurrency: m,
+                                        amountDisplay: _payrollAmountDisplay(
+                                          m,
+                                          _currency,
+                                        ),
+                                        currencyDisplay:
+                                            _payrollCurrencyDisplay(
+                                              m,
+                                              _currency,
+                                            ),
+                                      );
+                                    }).toList();
                                   }
 
                                   final bundle = fut.data!;
                                   return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
                                     children: [
                                       LayoutBuilder(
                                         builder: (context, c) {
                                           final w = c.maxWidth;
-                                          final cardW = w > 900 ? (w - 48) / 4 : (w > 500 ? (w - 16) / 2 : w);
-                                          Widget card(String title, String value) {
+                                          final cardW = w > 900
+                                              ? (w - 48) / 4
+                                              : (w > 500 ? (w - 16) / 2 : w);
+                                          Widget card(
+                                            String title,
+                                            String value,
+                                          ) {
                                             return SizedBox(
                                               width: cardW,
                                               child: Card(
                                                 child: Padding(
-                                                  padding: const EdgeInsets.all(14),
+                                                  padding: const EdgeInsets.all(
+                                                    14,
+                                                  ),
                                                   child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
                                                       Text(
                                                         title,
-                                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                        ),
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color: Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
                                                       ),
                                                       const SizedBox(height: 6),
                                                       Text(
                                                         value,
-                                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                          fontWeight: FontWeight.w700,
-                                                        ),
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .titleMedium
+                                                            ?.copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
                                                       ),
                                                     ],
                                                   ),
@@ -290,10 +373,24 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                             spacing: 12,
                                             runSpacing: 12,
                                             children: [
-                                              card('Tracked employees', '${lines.length}'),
-                                              card('Total hours', bundle.totalHours.toStringAsFixed(2)),
-                                              card('Billable hours', bundle.totalBillableHours.toStringAsFixed(2)),
-                                              card('Estimated (billable)', _money(bundle.grandTotals)),
+                                              card(
+                                                'Tracked employees',
+                                                '${lines.length}',
+                                              ),
+                                              card(
+                                                'Total hours',
+                                                bundle.totalHours
+                                                    .toStringAsFixed(2),
+                                              ),
+                                              card(
+                                                'Billable hours',
+                                                bundle.totalBillableHours
+                                                    .toStringAsFixed(2),
+                                              ),
+                                              card(
+                                                'Estimated (billable)',
+                                                _money(bundle.grandTotals),
+                                              ),
                                             ],
                                           );
                                         },
@@ -307,25 +404,67 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                             dataRowMinHeight: 48,
                                             dataRowMaxHeight: 72,
                                             columns: const [
-                                              DataColumn(label: Text('Employee')),
-                                              DataColumn(label: Text('Company')),
-                                              DataColumn(label: Text('Total h')),
-                                              DataColumn(label: Text('Billable h')),
-                                              DataColumn(label: Text('Non-bill. h')),
-                                              DataColumn(label: Text('Estimated')),
-                                              DataColumn(label: Text('Currency')),
+                                              DataColumn(
+                                                label: Text('Employee'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Company'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Total h'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Billable h'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Non-bill. h'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Estimated'),
+                                              ),
+                                              DataColumn(
+                                                label: Text('Currency'),
+                                              ),
                                             ],
                                             rows: [
                                               for (final line in lines)
                                                 DataRow(
                                                   cells: [
-                                                    DataCell(_payrollEmployeeCell(context, line)),
-                                                    DataCell(Text(line.companyName)),
-                                                    DataCell(Text(line.totalHours.toStringAsFixed(2))),
-                                                    DataCell(Text(line.billableHours.toStringAsFixed(2))),
-                                                    DataCell(Text(line.nonBillableHours.toStringAsFixed(2))),
-                                                    DataCell(Text(line.amountDisplay)),
-                                                    DataCell(Text(line.currencyDisplay)),
+                                                    DataCell(
+                                                      _payrollEmployeeCell(
+                                                        context,
+                                                        line,
+                                                      ),
+                                                    ),
+                                                    DataCell(
+                                                      Text(line.companyName),
+                                                    ),
+                                                    DataCell(
+                                                      Text(
+                                                        line.totalHours
+                                                            .toStringAsFixed(2),
+                                                      ),
+                                                    ),
+                                                    DataCell(
+                                                      Text(
+                                                        line.billableHours
+                                                            .toStringAsFixed(2),
+                                                      ),
+                                                    ),
+                                                    DataCell(
+                                                      Text(
+                                                        line.nonBillableHours
+                                                            .toStringAsFixed(2),
+                                                      ),
+                                                    ),
+                                                    DataCell(
+                                                      Text(line.amountDisplay),
+                                                    ),
+                                                    DataCell(
+                                                      Text(
+                                                        line.currencyDisplay,
+                                                      ),
+                                                    ),
                                                   ],
                                                 ),
                                             ],
@@ -337,16 +476,23 @@ class _PayrollScreenState extends State<PayrollScreen> {
                                         child: Padding(
                                           padding: const EdgeInsets.all(16),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
                                                 'Summary',
-                                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                               ),
                                               const SizedBox(height: 8),
-                                              Text('Totals by currency: ${_money(bundle.grandTotals)}'),
+                                              Text(
+                                                'Totals by currency: ${_money(bundle.grandTotals)}',
+                                              ),
                                             ],
                                           ),
                                         ),
@@ -367,18 +513,28 @@ class _PayrollScreenState extends State<PayrollScreen> {
     );
   }
 
-  Future<_PayrollBundle> _buildLines(List<TrackedEmployee> tracked, ReportPeriod period) async {
+  Future<_PayrollBundle> _buildLines(
+    List<TrackedEmployee> tracked,
+    ReportPeriod period,
+  ) async {
     final lines = <PayrollLine>[];
     var grandTotals = <String, double>{};
     var totalHoursAll = 0.0;
     var totalBillableAll = 0.0;
 
-    final groupsSnap = await widget.firestore.groupsStream(FirebaseAuth.instance.currentUser!.uid).first;
+    final groupsSnap = await widget.firestore
+        .groupsStream(FirebaseAuth.instance.currentUser!.uid)
+        .first;
     final groupName = {for (final g in groupsSnap) g.id: g.name};
 
     for (final t in tracked) {
-      final entries = await widget.firestore.fetchEntriesInRange(t.employeeUid, period);
-      final workspaces = await widget.firestore.fetchEmployeeWorkspaces(t.employeeUid);
+      final entries = await widget.firestore.fetchEntriesInRange(
+        t.employeeUid,
+        period,
+      );
+      final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
+        t.employeeUid,
+      );
       final wsMap = {for (final w in workspaces) w.id: w};
 
       final scoped = entries.where((e) {
@@ -403,13 +559,17 @@ class _PayrollScreenState extends State<PayrollScreen> {
       );
       money.forEach((k, v) => grandTotals[k] = (grandTotals[k] ?? 0) + v);
 
-      final groupLabels = t.groupIds.map((id) => groupName[id] ?? id).join(', ');
+      final groupLabels = t.groupIds
+          .map((id) => groupName[id] ?? id)
+          .join(', ');
 
       lines.add(
         PayrollLine(
           trackedId: t.id,
           employeeLabel: employeeFullName(t),
-          employeeEmailSubtitle: employeeShowEmailAsSubtitle(t) ? t.employeeEmail : null,
+          employeeEmailSubtitle: employeeShowEmailAsSubtitle(t)
+              ? t.employeeEmail
+              : null,
           companyName: t.companyName,
           groupLabels: groupLabels.isEmpty ? '—' : groupLabels,
           totalHours: totalRowHours,
@@ -448,7 +608,9 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
   static String _money(Map<String, double> m) {
     if (m.isEmpty) return '—';
-    return m.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
+    return m.entries
+        .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
+        .join(' · ');
   }
 
   double _sumHours(List<WorkEntry> entries) {
@@ -469,7 +631,10 @@ class _PayrollScreenState extends State<PayrollScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(line.employeeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(
+          line.employeeLabel,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         Text(
           sub,
           maxLines: 1,

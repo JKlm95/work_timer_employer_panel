@@ -5,6 +5,14 @@ rules_version = '2';
 // - Fine-grained Firestore rules (employer can only read linked employees / indices), or
 // - Cloud Functions / backend that validates employer ↔ employee relationships.
 //
+// Production documentation notes (do not relax blindly):
+// - `userEmailIndex/{emailLower}` below allows read for any authenticated user (`request.auth != null`).
+//   In production, restrict reads e.g. to employers who have linked the employee, or serve lookups
+//   only via Cloud Functions, so the index is not enumerable by arbitrary signed-in clients.
+// - Employer access to `users/{employeeUid}/...` is gated here by `trackedEmployeeUids/{employeeUid}`.
+//   Keep that collection accurate when adding/removing tracked employees so employers only read
+//   data for people they actually track. See DATA_CONTRACT.md for path overview.
+//
 // MVP frontend assumes these collections/paths:
 // - userEmailIndex/{emailLower}
 // - users/{uid}/workspaces/{workspaceId}

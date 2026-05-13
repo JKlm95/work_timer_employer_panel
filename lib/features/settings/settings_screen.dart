@@ -24,7 +24,9 @@ class SettingsScreen extends StatelessWidget {
             children: [
               Text(
                 'Settings',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 16),
               Card(
@@ -35,7 +37,8 @@ class SettingsScreen extends StatelessWidget {
                     children: [
                       Text(
                         'Appearance',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -80,7 +83,10 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Signed in as', style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        'Signed in as',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 4),
                       SelectableText(user?.email ?? '—'),
                     ],

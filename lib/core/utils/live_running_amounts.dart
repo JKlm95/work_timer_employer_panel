@@ -16,12 +16,15 @@ class LiveRunningMoneySummary {
   });
 
   final Map<String, double> byCurrency;
+
   /// At least one employee had `timerState == running` but no usable hourly rate.
   final bool hasRunningWithoutRate;
 
   String displayValue() {
     if (byCurrency.isNotEmpty) {
-      return byCurrency.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
+      return byCurrency.entries
+          .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
+          .join(' · ');
     }
     if (hasRunningWithoutRate) return 'No rate';
     return '—';
@@ -104,7 +107,8 @@ LiveRunningMoneySummary computeLiveRunningMoneySummary({
     if (seenRunning.contains(uid)) continue;
     seenRunning.add(uid);
 
-    final wsMap = workspaceMapsByEmployeeUid[uid] ?? const <String, Workspace>{};
+    final wsMap =
+        workspaceMapsByEmployeeUid[uid] ?? const <String, Workspace>{};
     final rate = _pickHourlyRate(live, wsMap);
     final secs = live.currentAccumulatedSeconds(at);
 
@@ -132,7 +136,10 @@ LiveRunningMoneySummary computeLiveRunningMoneySummary({
     );
   }
 
-  return LiveRunningMoneySummary(byCurrency: out, hasRunningWithoutRate: missingRate);
+  return LiveRunningMoneySummary(
+    byCurrency: out,
+    hasRunningWithoutRate: missingRate,
+  );
 }
 
 /// @nodoc — backwards-compatible name.

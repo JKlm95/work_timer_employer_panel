@@ -39,7 +39,9 @@ class UserEmailIndex extends Equatable {
       displayName: data['displayName'] as String?,
       createdAt: _ts(data['createdAt']),
       updatedAt: _ts(data['updatedAt']),
-      providerIds: providers is List ? providers.map((e) => e.toString()).toList() : null,
+      providerIds: providers is List
+          ? providers.map((e) => e.toString()).toList()
+          : null,
     );
   }
 

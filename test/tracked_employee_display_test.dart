@@ -26,9 +26,15 @@ TrackedEmployee _employee({
 void main() {
   group('TrackedEmployee.fullName', () {
     test('combines first and last when present', () {
-      expect(_employee(firstName: 'Jan', lastName: 'Kowalski').fullName, 'Jan Kowalski');
+      expect(
+        _employee(firstName: 'Jan', lastName: 'Kowalski').fullName,
+        'Jan Kowalski',
+      );
       expect(_employee(firstName: 'Jan', lastName: null).fullName, 'Jan');
-      expect(_employee(firstName: null, lastName: 'Kowalski').fullName, 'Kowalski');
+      expect(
+        _employee(firstName: null, lastName: 'Kowalski').fullName,
+        'Kowalski',
+      );
     });
 
     test('uses displayName when first/last empty', () {
@@ -40,9 +46,25 @@ void main() {
     });
   });
 
+  group('employeeInitials', () {
+    test('uses first and last when present', () {
+      expect(
+        employeeInitials(_employee(firstName: 'Jan', lastName: 'Kowalski')),
+        'JK',
+      );
+    });
+
+    test('uses two letters from email when no names', () {
+      expect(employeeInitials(_employee(email: 'ab@cd.ef')), 'AB');
+    });
+  });
+
   group('employeeShowEmailAsSubtitle', () {
     test('false when primary label is already the email', () {
-      expect(employeeShowEmailAsSubtitle(_employee(email: 'only@email.test')), false);
+      expect(
+        employeeShowEmailAsSubtitle(_employee(email: 'only@email.test')),
+        false,
+      );
     });
 
     test('true when name differs from email', () {

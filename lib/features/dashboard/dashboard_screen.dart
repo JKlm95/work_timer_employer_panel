@@ -37,7 +37,11 @@ class _DashboardStreamError extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_outlined, size: 48, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.cloud_off_outlined,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(height: 16),
               Text(title, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -54,7 +58,10 @@ class _DashboardStreamError extends StatelessWidget {
   }
 }
 
-int _countWorkingNow(List<TrackedEmployee> tracked, Map<String, EmployeeLiveStatus?> live) {
+int _countWorkingNow(
+  List<TrackedEmployee> tracked,
+  Map<String, EmployeeLiveStatus?> live,
+) {
   final seen = <String>{};
   var n = 0;
   for (final t in tracked) {
@@ -98,9 +105,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _hadFirstStatsPostFrame = false;
   String _lastStatsTrackedIdsPostFrame = '';
 
-  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> _monthEntrySubs = [];
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _monthEntrySubs = [];
   String _monthEntryListenUidSig = '';
   Timer? _entriesDebounceTimer;
+
+  /// Last successful stats snapshot (avoids flicker when auto-refresh replaces [Future]).
+  _DashboardSnapshot? _statsDisplayCache;
 
   @override
   void initState() {
@@ -111,7 +122,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _refreshNonce++;
         _statsSig = '';
       });
-      _syncStatsIfNeeded(_latestTracked, reason: _DashboardStatsRefreshReason.auto);
+      _syncStatsIfNeeded(
+        _latestTracked,
+        reason: _DashboardStatsRefreshReason.auto,
+      );
     });
   }
 
@@ -145,8 +159,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback(_onPostFrameSyncStats);
   }
 
-  _DashboardStatsRefreshReason _postFrameStatsReason(List<TrackedEmployee> tracked) {
-    final idKey = tracked.isEmpty ? '__empty__' : tracked.map((e) => e.id).join('|');
+  _DashboardStatsRefreshReason _postFrameStatsReason(
+    List<TrackedEmployee> tracked,
+  ) {
+    final idKey = tracked.isEmpty
+        ? '__empty__'
+        : tracked.map((e) => e.id).join('|');
     final _DashboardStatsRefreshReason r;
     if (!_hadFirstStatsPostFrame) {
       _hadFirstStatsPostFrame = true;
@@ -162,8 +180,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _ensureMonthEntryListeners(List<TrackedEmployee> tracked) {
     final period = _thisMonth;
-    final monthKey = '${period.start.year}-${period.start.month.toString().padLeft(2, '0')}';
-    final uids = tracked.map((e) => e.employeeUid).where((u) => u.trim().isNotEmpty).toSet().toList()..sort();
+    final monthKey =
+        '${period.start.year}-${period.start.month.toString().padLeft(2, '0')}';
+    final uids =
+        tracked
+            .map((e) => e.employeeUid)
+            .where((u) => u.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     final sig = '$monthKey|${uids.join('|')}';
     if (sig == _monthEntryListenUidSig) return;
     _monthEntryListenUidSig = sig;
@@ -174,9 +199,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _monthEntrySubs.clear();
     if (uids.isEmpty) return;
     for (final uid in uids) {
-      final sub = widget.firestore.entriesInMonthSnapshots(uid, period).skip(1).listen((_) {
-        _scheduleStatsReloadFromFirestoreEntries();
-      });
+      final sub = widget.firestore
+          .entriesInMonthSnapshots(uid, period)
+          .skip(1)
+          .listen((_) {
+            _scheduleStatsReloadFromFirestoreEntries();
+          });
       _monthEntrySubs.add(sub);
     }
   }
@@ -190,7 +218,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _refreshNonce++;
         _statsSig = '';
       });
-      _syncStatsIfNeeded(_latestTracked, reason: _DashboardStatsRefreshReason.auto);
+      _syncStatsIfNeeded(
+        _latestTracked,
+        reason: _DashboardStatsRefreshReason.auto,
+      );
     });
   }
 
@@ -207,22 +238,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _syncStatsIfNeeded(List<TrackedEmployee> tracked, {required _DashboardStatsRefreshReason reason}) {
+  void _syncStatsIfNeeded(
+    List<TrackedEmployee> tracked, {
+    required _DashboardStatsRefreshReason reason,
+  }) {
     _latestTracked = tracked;
     if (tracked.isEmpty) {
       final sig = 'empty|$_refreshNonce';
       if (_statsSig == sig && _statsFuture != null) return;
       _statsSig = sig;
-      _statsFuture = Future.value(_DashboardSnapshot.empty());
+      final emptySnap = _DashboardSnapshot.empty();
+      _statsFuture = Future.value(emptySnap);
       _logStatsRefreshDebug(reason, tracked, {});
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          _statsDisplayCache = emptySnap;
+          _lastStatsRefresh = DateTime.now();
+        });
+      }
       return;
     }
     final sig = '${tracked.map((e) => e.id).join('|')}|$_refreshNonce';
     if (_statsSig == sig && _statsFuture != null) return;
     _statsSig = sig;
-    _statsFuture = _loadDashboardSnapshot(tracked, reason);
+    _statsFuture = _loadDashboardSnapshot(tracked, reason).then((v) {
+      if (mounted) {
+        setState(() {
+          _statsDisplayCache = v;
+          _lastStatsRefresh = DateTime.now();
+        });
+      }
+      return v;
+    });
     if (mounted) setState(() {});
+  }
+
+  _DashboardSnapshot _statsSnapshotForUi(
+    AsyncSnapshot<_DashboardSnapshot> snap,
+  ) {
+    if (snap.hasData) return snap.data!;
+    if (_statsDisplayCache != null) return _statsDisplayCache!;
+    return _DashboardSnapshot.empty();
+  }
+
+  /// Spinner on monthly aggregates only before we ever loaded stats (no flicker on refresh).
+  bool _statsFirstLoadSpinner(AsyncSnapshot<_DashboardSnapshot> snap) {
+    return !snap.hasError &&
+        snap.connectionState == ConnectionState.waiting &&
+        !snap.hasData &&
+        _statsDisplayCache == null;
   }
 
   Future<void> _manualRefresh(List<TrackedEmployee> tracked) async {
@@ -238,7 +302,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _syncStatsIfNeeded(tracked, reason: _DashboardStatsRefreshReason.manual);
       final f = _statsFuture;
       if (f != null) await f;
-      if (mounted) setState(() => _lastStatsRefresh = DateTime.now());
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[Dashboard] manual refresh failed: $e');
+        debugPrintStack(stackTrace: st, label: 'dashboard_manual_refresh');
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not refresh data: $e')));
+      }
     } finally {
       if (mounted) setState(() => _refreshingStats = false);
     }
@@ -257,7 +330,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final workspaceMapsByEmployeeUid = <String, Map<String, Workspace>>{};
 
       final lastTimes = await Future.wait(
-        tracked.map((t) => widget.firestore.fetchLastActivityAt(t.employeeUid, preferServer: preferServer)),
+        tracked.map(
+          (t) => widget.firestore.fetchLastActivityAt(
+            t.employeeUid,
+            preferServer: preferServer,
+          ),
+        ),
       );
       for (var i = 0; i < tracked.length; i++) {
         lastByTracked[tracked[i].id] = lastTimes[i];
@@ -277,7 +355,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
         final filtered = entries.where((e) {
           if (e.isDeleted || e.end == null) return false;
-          if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() != t.companySlug.toLowerCase()) {
+          if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() !=
+              t.companySlug.toLowerCase()) {
             return false;
           }
           return true;
@@ -287,7 +366,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           entries: filtered.where((e) => e.isWorkEntry).toList(),
           workspaceById: wsMap,
         );
-        money.forEach((k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v);
+        money.forEach(
+          (k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v,
+        );
       }
 
       _logStatsRefreshDebug(reason, tracked, amountByCurrency);
@@ -303,7 +384,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         debugPrint('[Dashboard] _loadDashboardSnapshot failed: $e');
         debugPrintStack(stackTrace: st, label: 'dashboard_stats');
       }
-      return _DashboardSnapshot.empty();
+      Error.throwWithStackTrace(e, st);
     }
   }
 
@@ -322,7 +403,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, groupsSnap) {
             if (trackedSnap.hasError) {
               if (kDebugMode) {
-                debugPrint('[Dashboard] trackedEmployeesStream error: ${trackedSnap.error}');
+                debugPrint(
+                  '[Dashboard] trackedEmployeesStream error: ${trackedSnap.error}',
+                );
               }
               return _DashboardStreamError(
                 title: 'Could not load employees',
@@ -331,7 +414,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             }
             if (groupsSnap.hasError) {
               if (kDebugMode) {
-                debugPrint('[Dashboard] groupsStream error: ${groupsSnap.error}');
+                debugPrint(
+                  '[Dashboard] groupsStream error: ${groupsSnap.error}',
+                );
               }
               return _DashboardStreamError(
                 title: 'Could not load groups',
@@ -342,14 +427,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final tracked = trackedSnap.data ?? [];
             final groupsCount = groupsSnap.data?.length ?? 0;
 
-            if (trackedSnap.connectionState == ConnectionState.waiting && !trackedSnap.hasData) {
+            if (trackedSnap.connectionState == ConnectionState.waiting &&
+                !trackedSnap.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
             _requestDashboardStatsSync(tracked);
 
-            final statsFuture = _statsFuture ??
-                Future.value(_DashboardSnapshot.empty());
+            final statsFuture =
+                _statsFuture ?? Future.value(_DashboardSnapshot.empty());
 
             return DashboardLiveStatusHost(
               tracked: tracked,
@@ -358,301 +444,504 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 try {
                   final workingNow = _countWorkingNow(tracked, liveByUid);
                   return SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Dashboard',
-                                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Monthly work report overview — not a legal payroll document.',
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Refresh data',
-                                onPressed: _refreshingStats || tracked.isEmpty ? null : () => _manualRefresh(tracked),
-                                icon: _refreshingStats
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.refresh),
-                              ),
-                              if (_lastStatsRefresh != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8, top: 12),
-                                  child: Text(
-                                    'Last updated: ${DateFormat.Hms().format(_lastStatsRefresh!)}',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          FutureBuilder<_DashboardSnapshot>(
-                            key: ValueKey<(int, String)>((_refreshNonce, _statsSig)),
-                            future: statsFuture,
-                            builder: (context, snap) {
-                              if (snap.hasError) {
-                                if (kDebugMode) {
-                                  debugPrint('[Dashboard] FutureBuilder stats error: ${snap.error}');
-                                  final st = snap.stackTrace;
-                                  if (st != null) debugPrintStack(stackTrace: st, label: 'dashboard_stats_future');
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                    padding: const EdgeInsets.all(24),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1200),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Could not load monthly stats.',
-                                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                        'Dashboard',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                       const SizedBox(height: 8),
-                                      SelectableText(
-                                        '${snap.error}',
-                                        style: Theme.of(context).textTheme.bodySmall,
+                                      Text(
+                                        'Monthly work report overview — not a legal payroll document.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
                                       ),
                                     ],
                                   ),
-                                );
-                              }
-                              final loading = snap.connectionState == ConnectionState.waiting;
-                              final stats = snap.data ?? _DashboardSnapshot.empty();
-                              LiveRunningMoneySummary liveSummary;
-                              try {
-                                liveSummary = computeLiveRunningMoneySummary(
-                                  tracked: tracked,
-                                  liveByEmployeeUid: liveByUid,
-                                  workspaceMapsByEmployeeUid: stats.workspaceMapsByEmployeeUid,
-                                  at: DateTime.now(),
-                                );
-                              } catch (e, st) {
-                                if (kDebugMode) {
-                                  debugPrint('[Dashboard] live amount compute failed: $e');
-                                  debugPrintStack(stackTrace: st, label: 'dashboard_live_amount');
+                                ),
+                                IconButton(
+                                  tooltip: 'Refresh data',
+                                  onPressed: _refreshingStats || tracked.isEmpty
+                                      ? null
+                                      : () => _manualRefresh(tracked),
+                                  icon: _refreshingStats
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.refresh),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 8,
+                                    top: 12,
+                                  ),
+                                  child: Text(
+                                    _lastStatsRefresh == null
+                                        ? 'Last updated: —'
+                                        : 'Last updated: ${DateFormat.Hms().format(_lastStatsRefresh!)}',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            FutureBuilder<_DashboardSnapshot>(
+                              key: ValueKey<(int, String)>((
+                                _refreshNonce,
+                                _statsSig,
+                              )),
+                              future: statsFuture,
+                              builder: (context, snap) {
+                                if (snap.hasError) {
+                                  if (kDebugMode) {
+                                    debugPrint(
+                                      '[Dashboard] FutureBuilder stats error: ${snap.error}',
+                                    );
+                                    final st = snap.stackTrace;
+                                    if (st != null) {
+                                      debugPrintStack(
+                                        stackTrace: st,
+                                        label: 'dashboard_stats_future',
+                                      );
+                                    }
+                                  }
                                 }
-                                liveSummary = LiveRunningMoneySummary(
-                                  byCurrency: {},
-                                  hasRunningWithoutRate: false,
+                                final stats = _statsSnapshotForUi(snap);
+                                final monthLoading = _statsFirstLoadSpinner(
+                                  snap,
                                 );
-                              }
-                              return LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final w = constraints.maxWidth;
-                                  final cards = [
-                                    _SummaryCard(
-                                      title: 'Tracked employees',
-                                      value: '${tracked.length}',
-                                      icon: Icons.people_outline,
-                                      loading: false,
-                                    ),
-                                    _SummaryCard(
-                                      title: 'Active groups',
-                                      value: '$groupsCount',
-                                      icon: Icons.folder_special_outlined,
-                                      loading: false,
-                                    ),
-                                    _SummaryCard(
-                                      title: 'Working now',
-                                      value: '$workingNow',
-                                      icon: Icons.play_circle_outline,
-                                      loading: false,
-                                    ),
-                                    _SummaryCard(
-                                      title: 'Hours this month',
-                                      value: loading ? '…' : stats.totalHours.toStringAsFixed(1),
-                                      icon: Icons.schedule,
-                                      loading: loading,
-                                    ),
-                                    _SummaryCard(
-                                      title: 'Estimated amount (month)',
-                                      subtitle: 'From saved entries',
-                                      value: loading ? '…' : _formatMoney(stats.amountByCurrency),
-                                      icon: Icons.payments_outlined,
-                                      loading: loading,
-                                      denseValue: true,
-                                    ),
-                                    _SummaryCard(
-                                      title: 'Live running (est.)',
-                                      subtitle: 'UI only — not saved',
-                                      value: loading ? '…' : liveSummary.displayValue(),
-                                      icon: Icons.bolt_outlined,
-                                      loading: loading,
-                                      denseValue: true,
-                                    ),
-                                  ];
-                                  final cols = w > 1100 ? 3 : (w > 520 ? 2 : 1);
-                                  return Wrap(
-                                    spacing: 16,
-                                    runSpacing: 16,
-                                    children: [
-                                      for (var i = 0; i < cards.length; i++)
-                                        SizedBox(
-                                          width: cols == 1 ? w : (w - (cols - 1) * 16) / cols,
-                                          child: cards[i],
-                                        ),
-                                    ],
+                                LiveRunningMoneySummary liveSummary;
+                                try {
+                                  liveSummary = computeLiveRunningMoneySummary(
+                                    tracked: tracked,
+                                    liveByEmployeeUid: liveByUid,
+                                    workspaceMapsByEmployeeUid:
+                                        stats.workspaceMapsByEmployeeUid,
+                                    at: DateTime.now(),
                                   );
-                                },
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 28),
-                          Row(
-                            children: [
-                              Text(
-                                'Recent tracked employees',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              const Spacer(),
-                              FilledButton.tonalIcon(
-                                onPressed: () => showAddEmployeeDialog(context, widget.firestore),
-                                icon: const Icon(Icons.person_add_alt_1_outlined),
-                                label: const Text('Add employee'),
-                              ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                onPressed: () => showCreateGroupDialog(context, widget.firestore),
-                                icon: const Icon(Icons.create_new_folder_outlined),
-                                label: const Text('Create group'),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                onPressed: () => context.go('/payroll'),
-                                icon: const Icon(Icons.payments_outlined),
-                                label: const Text('Payroll report'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Card(
-                            child: tracked.isEmpty
-                                ? Padding(
-                                    padding: const EdgeInsets.all(32),
-                                    child: Column(
-                                      children: [
-                                        Text(
-                                          'No employees tracked yet.',
-                                          textAlign: TextAlign.center,
-                                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                } catch (e, st) {
+                                  if (kDebugMode) {
+                                    debugPrint(
+                                      '[Dashboard] live amount compute failed: $e',
+                                    );
+                                    debugPrintStack(
+                                      stackTrace: st,
+                                      label: 'dashboard_live_amount',
+                                    );
+                                  }
+                                  liveSummary = LiveRunningMoneySummary(
+                                    byCurrency: {},
+                                    hasRunningWithoutRate: false,
+                                  );
+                                }
+                                final scheme = Theme.of(context).colorScheme;
+                                final errorBanner = snap.hasError
+                                    ? Material(
+                                        color: scheme.errorContainer.withValues(alpha: 0.5),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    Icons.warning_amber_rounded,
+                                                    color:
+                                                        scheme.onErrorContainer,
+                                                    size: 22,
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Monthly stats could not be refreshed. Showing last loaded values below.',
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: scheme
+                                                                .onErrorContainer,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              SelectableText(
+                                                '${snap.error}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: scheme
+                                                          .onErrorContainer,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Add your first employee to start viewing reports.',
-                                          textAlign: TextAlign.center,
-                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      )
+                                    : null;
+
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (errorBanner != null) ...[
+                                      errorBanner,
+                                      const SizedBox(height: 12),
+                                    ],
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final w = constraints.maxWidth;
+                                        final cards = [
+                                          _SummaryCard(
+                                            title: 'Tracked employees',
+                                            value: '${tracked.length}',
+                                            icon: Icons.people_outline,
+                                            loading: false,
                                           ),
-                                        ),
-                                        const SizedBox(height: 20),
-                                        FilledButton.icon(
-                                          onPressed: () => showAddEmployeeDialog(context, widget.firestore),
-                                          icon: const Icon(Icons.person_add_alt_1_outlined),
-                                          label: const Text('Add employee'),
-                                        ),
-                                      ],
+                                          _SummaryCard(
+                                            title: 'Active groups',
+                                            value: '$groupsCount',
+                                            icon: Icons.folder_special_outlined,
+                                            loading: false,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Working now',
+                                            value: '$workingNow',
+                                            icon: Icons.play_circle_outline,
+                                            loading: false,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Hours this month',
+                                            value: monthLoading
+                                                ? '…'
+                                                : stats.totalHours
+                                                      .toStringAsFixed(1),
+                                            icon: Icons.schedule,
+                                            loading: monthLoading,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Estimated amount (month)',
+                                            subtitle:
+                                                'Closed entries · saved in Firestore · this month',
+                                            value: monthLoading
+                                                ? '…'
+                                                : _formatMoney(
+                                                    stats.amountByCurrency,
+                                                  ),
+                                            icon: Icons.payments_outlined,
+                                            loading: monthLoading,
+                                            denseValue: true,
+                                          ),
+                                          _SummaryCard(
+                                            title: 'Live running (est.)',
+                                            subtitle:
+                                                'Running timers × rate · UI only, not saved',
+                                            value: liveSummary.displayValue(),
+                                            icon: Icons.bolt_outlined,
+                                            loading: false,
+                                            denseValue: true,
+                                          ),
+                                        ];
+                                        final cols = w > 1100
+                                            ? 3
+                                            : (w > 520 ? 2 : 1);
+                                        return Wrap(
+                                          spacing: 16,
+                                          runSpacing: 16,
+                                          children: [
+                                            for (
+                                              var i = 0;
+                                              i < cards.length;
+                                              i++
+                                            )
+                                              SizedBox(
+                                                width: cols == 1
+                                                    ? w
+                                                    : (w - (cols - 1) * 16) /
+                                                          cols,
+                                                child: cards[i],
+                                              ),
+                                          ],
+                                        );
+                                      },
                                     ),
-                                  )
-                                : FutureBuilder<_DashboardSnapshot>(
-                                    key: ValueKey<(int, String)>((_refreshNonce, _statsSig)),
-                                    future: statsFuture,
-                                    builder: (context, snap) {
-                                      if (snap.hasError) {
-                                        if (kDebugMode) {
-                                          debugPrint('[Dashboard] recent list stats error: ${snap.error}');
-                                          final st = snap.stackTrace;
-                                          if (st != null) {
-                                            debugPrintStack(stackTrace: st, label: 'dashboard_recent_list');
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 28),
+                            Row(
+                              children: [
+                                Text(
+                                  'Recent tracked employees',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const Spacer(),
+                                FilledButton.tonalIcon(
+                                  onPressed: () => showAddEmployeeDialog(
+                                    context,
+                                    widget.firestore,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.person_add_alt_1_outlined,
+                                  ),
+                                  label: const Text('Add employee'),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  onPressed: () => showCreateGroupDialog(
+                                    context,
+                                    widget.firestore,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.create_new_folder_outlined,
+                                  ),
+                                  label: const Text('Create group'),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton.icon(
+                                  onPressed: () => context.go('/payroll'),
+                                  icon: const Icon(Icons.payments_outlined),
+                                  label: const Text('Payroll report'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Card(
+                              child: tracked.isEmpty
+                                  ? Padding(
+                                      padding: const EdgeInsets.all(32),
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            'No employees tracked yet.',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Add your first employee to start viewing reports.',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          FilledButton.icon(
+                                            onPressed: () =>
+                                                showAddEmployeeDialog(
+                                                  context,
+                                                  widget.firestore,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.person_add_alt_1_outlined,
+                                            ),
+                                            label: const Text('Add employee'),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : FutureBuilder<_DashboardSnapshot>(
+                                      key: ValueKey<(int, String)>((
+                                        _refreshNonce,
+                                        _statsSig,
+                                      )),
+                                      future: statsFuture,
+                                      builder: (context, snap) {
+                                        if (snap.hasError) {
+                                          if (kDebugMode) {
+                                            debugPrint(
+                                              '[Dashboard] recent list stats error: ${snap.error}',
+                                            );
+                                            final st = snap.stackTrace;
+                                            if (st != null) {
+                                              debugPrintStack(
+                                                stackTrace: st,
+                                                label: 'dashboard_recent_list',
+                                              );
+                                            }
                                           }
                                         }
-                                        return Padding(
-                                          padding: const EdgeInsets.all(16),
-                                          child: Text(
-                                            'Could not load activity for this list.',
-                                            style: TextStyle(color: Theme.of(context).colorScheme.error),
-                                          ),
-                                        );
-                                      }
-                                      final st = snap.data;
-                                      return ListView.separated(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        itemCount: tracked.length.clamp(0, 5),
-                                        separatorBuilder: (context, _) => const Divider(height: 1),
-                                        itemBuilder: (context, i) {
-                                          final e = tracked[i];
-                                          final last = st?.lastActivityByTrackedId[e.id];
-                                          final lastText = last == null
-                                              ? 'Last activity: —'
-                                              : 'Last activity: ${DateFormat.yMMMd().add_jm().format(last)}';
-                                          return ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                            leading: CircleAvatar(
-                                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                              child: Text(employeeInitials(e)),
-                                            ),
-                                            title: Text(employeeFullName(e)),
-                                            subtitle: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                if (employeeShowEmailAsSubtitle(e))
-                                                  Text(e.employeeEmail, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                Text(e.companyName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  lastText,
-                                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                  ),
+                                        final st = _statsSnapshotForUi(snap);
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            if (snap.hasError)
+                                              Padding(
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      16,
+                                                      12,
+                                                      16,
+                                                      0,
+                                                    ),
+                                                child: Text(
+                                                  'Activity times may be outdated (stats refresh failed).',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: Theme.of(
+                                                          context,
+                                                        ).colorScheme.error,
+                                                      ),
                                                 ),
-                                              ],
+                                              ),
+                                            ListView.separated(
+                                              shrinkWrap: true,
+                                              physics:
+                                                  const NeverScrollableScrollPhysics(),
+                                              itemCount: tracked.length.clamp(
+                                                0,
+                                                5,
+                                              ),
+                                              separatorBuilder: (context, _) =>
+                                                  const Divider(height: 1),
+                                              itemBuilder: (context, i) {
+                                                final e = tracked[i];
+                                                final last =
+                                                    st.lastActivityByTrackedId[e
+                                                        .id];
+                                                final lastText = last == null
+                                                    ? 'Last activity: —'
+                                                    : 'Last activity: ${DateFormat.yMMMd().add_jm().format(last)}';
+                                                return ListTile(
+                                                  contentPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 16,
+                                                        vertical: 8,
+                                                      ),
+                                                  leading: CircleAvatar(
+                                                    backgroundColor:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .primaryContainer,
+                                                    child: Text(
+                                                      employeeInitials(e),
+                                                    ),
+                                                  ),
+                                                  title: Text(
+                                                    employeeFullName(e),
+                                                  ),
+                                                  subtitle: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      if (employeeShowEmailAsSubtitle(
+                                                        e,
+                                                      ))
+                                                        Text(
+                                                          e.employeeEmail,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      Text(
+                                                        e.companyName,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        lastText,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color: Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  trailing:
+                                                      EmployeePresenceBadge(
+                                                        firestore:
+                                                            widget.firestore,
+                                                        tracked: e,
+                                                        compact: true,
+                                                      ),
+                                                  onTap: () => context.go(
+                                                    '/employees/detail/${e.id}',
+                                                  ),
+                                                );
+                                              },
                                             ),
-                                            trailing: EmployeePresenceBadge(
-                                              firestore: widget.firestore,
-                                              tracked: e,
-                                              compact: true,
-                                            ),
-                                            onTap: () => context.go('/employees/detail/${e.id}'),
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
+                  );
                 } catch (e, st) {
                   if (kDebugMode) {
                     debugPrint('[Dashboard] live host builder failed: $e');
-                    debugPrintStack(stackTrace: st, label: 'dashboard_live_host_builder');
+                    debugPrintStack(
+                      stackTrace: st,
+                      label: 'dashboard_live_host_builder',
+                    );
                   }
                   return Center(
                     child: Padding(
@@ -660,7 +949,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Text(
                         'Dashboard layout error. Pull to refresh or use Refresh data.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ),
                   );
@@ -675,7 +966,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   static String _formatMoney(Map<String, double> m) {
     if (m.isEmpty) return '—';
-    return m.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
+    return m.entries
+        .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
+        .join(' · ');
   }
 }
 
@@ -747,12 +1040,18 @@ class _SummaryCard extends StatelessWidget {
                   ],
                   const SizedBox(height: 4),
                   loading
-                      ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : Text(
                           value,
                           style: denseValue
-                              ? Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)
-                              : Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                              ? Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700)
+                              : Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                 ],
               ),

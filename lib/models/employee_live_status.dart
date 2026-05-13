@@ -19,6 +19,7 @@ class EmployeeLiveStatus extends Equatable {
   });
 
   final bool? isOnline;
+
   /// `idle`, `running`, `paused` (case-insensitive when read).
   final String? timerState;
   final String? activeWorkspaceId;
@@ -28,10 +29,13 @@ class EmployeeLiveStatus extends Equatable {
   final DateTime? updatedAt;
   final int? accumulatedSecondsBeforePause;
   final DateTime? sessionStartedAt;
+
   /// 0–100; defaults to 100 in UI if null.
   final double? billingRatePercent;
+
   /// Optional rate on live doc; falls back to workspace when null.
   final double? hourlyRate;
+
   /// Optional ISO currency from live doc.
   final String? currency;
 
@@ -56,7 +60,9 @@ class EmployeeLiveStatus extends Equatable {
       activeWorkspaceName: _str(data['activeWorkspaceName']),
       lastSeenAt: _ts(data['lastSeenAt']),
       updatedAt: _ts(data['updatedAt']),
-      accumulatedSecondsBeforePause: _int(data['accumulatedSecondsBeforePause']),
+      accumulatedSecondsBeforePause: _int(
+        data['accumulatedSecondsBeforePause'],
+      ),
       sessionStartedAt: _ts(data['sessionStartedAt']),
       billingRatePercent: _double(data['billingRatePercent']),
       hourlyRate: _double(data['hourlyRate']),
@@ -107,18 +113,38 @@ class EmployeeLiveStatus extends Equatable {
     if (v is Timestamp) return v.toDate();
     if (v is DateTime) return v;
     if (v is int) {
-      if (v > 2000000000000) return DateTime.fromMillisecondsSinceEpoch(v, isUtc: true).toLocal();
-      if (v > 1000000000) return DateTime.fromMillisecondsSinceEpoch(v * 1000, isUtc: true).toLocal();
+      if (v > 2000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(v, isUtc: true).toLocal();
+      }
+      if (v > 1000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          v * 1000,
+          isUtc: true,
+        ).toLocal();
+      }
       return null;
     }
     if (v is num) {
       final i = v.round();
-      if (i > 2000000000000) return DateTime.fromMillisecondsSinceEpoch(i, isUtc: true).toLocal();
-      if (i > 1000000000) return DateTime.fromMillisecondsSinceEpoch(i * 1000, isUtc: true).toLocal();
+      if (i > 2000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(i, isUtc: true).toLocal();
+      }
+      if (i > 1000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          i * 1000,
+          isUtc: true,
+        ).toLocal();
+      }
     }
     return null;
   }
 
   @override
-  List<Object?> get props => [updatedAt, timerState, isOnline, accumulatedSecondsBeforePause, sessionStartedAt];
+  List<Object?> get props => [
+    updatedAt,
+    timerState,
+    isOnline,
+    accumulatedSecondsBeforePause,
+    sessionStartedAt,
+  ];
 }

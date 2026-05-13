@@ -1,13 +1,7 @@
 import '../../models/employee_live_status.dart';
 
 /// UI presence derived from [EmployeeLiveStatus] (timer state first; slug does not gate Working/Paused).
-enum WorkPresenceState {
-  working,
-  paused,
-  online,
-  offline,
-  unknown,
-}
+enum WorkPresenceState { working, paused, online, offline, unknown }
 
 const Duration kOnlineLastSeenThreshold = Duration(minutes: 2);
 
@@ -36,7 +30,8 @@ WorkPresenceState resolveWorkPresence({
 
   // idle or unknown non-running state → online/offline rules
   final last = live.lastSeenAt ?? live.updatedAt;
-  final stale = last == null || clock.difference(last) > kOnlineLastSeenThreshold;
+  final stale =
+      last == null || clock.difference(last) > kOnlineLastSeenThreshold;
 
   if (live.isOnline == false) {
     return WorkPresenceState.offline;

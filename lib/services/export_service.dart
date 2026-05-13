@@ -50,7 +50,11 @@ class ExportService {
         currency,
       ]);
     }
-    downloadTextFile(filename, _toCsv(rows), mimeType: 'text/csv;charset=utf-8');
+    downloadTextFile(
+      filename,
+      _toCsv(rows),
+      mimeType: 'text/csv;charset=utf-8',
+    );
   }
 
   void downloadPayrollCsv({
@@ -72,7 +76,9 @@ class ExportService {
       ],
     ];
     for (final line in lines) {
-      final employeeCell = line.employeeEmailSubtitle != null && line.employeeEmailSubtitle!.isNotEmpty
+      final employeeCell =
+          line.employeeEmailSubtitle != null &&
+              line.employeeEmailSubtitle!.isNotEmpty
           ? '${line.employeeLabel} (${line.employeeEmailSubtitle})'
           : line.employeeLabel;
       rows.add([
@@ -88,7 +94,11 @@ class ExportService {
         '${line.sickCount}',
       ]);
     }
-    downloadTextFile(filename, _toCsv(rows), mimeType: 'text/csv;charset=utf-8');
+    downloadTextFile(
+      filename,
+      _toCsv(rows),
+      mimeType: 'text/csv;charset=utf-8',
+    );
   }
 
   static String _date(DateTime d) =>
@@ -102,7 +112,10 @@ class ExportService {
   }
 
   static String _escapeCell(String cell) {
-    if (cell.contains(',') || cell.contains('"') || cell.contains('\n') || cell.contains('\r')) {
+    if (cell.contains(',') ||
+        cell.contains('"') ||
+        cell.contains('\n') ||
+        cell.contains('\r')) {
       return '"${cell.replaceAll('"', '""')}"';
     }
     return cell;

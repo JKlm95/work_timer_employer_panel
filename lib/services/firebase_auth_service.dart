@@ -1,7 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
 class FirebaseAuthService {
-  FirebaseAuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
+  FirebaseAuthService({FirebaseAuth? auth})
+    : _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseAuth _auth;
 
@@ -12,7 +13,10 @@ class FirebaseAuthService {
   String? get employerEmail => _auth.currentUser?.email;
 
   Future<void> signInWithEmailPassword(String email, String password) {
-    return _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+    return _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
   }
 
   Future<void> signOut() => _auth.signOut();

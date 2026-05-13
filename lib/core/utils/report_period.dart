@@ -6,6 +6,7 @@ class ReportPeriod extends Equatable {
   const ReportPeriod({required this.start, required this.endInclusive});
 
   final DateTime start;
+
   /// End of day inclusive for queries (23:59:59.999 same calendar day).
   final DateTime endInclusive;
 

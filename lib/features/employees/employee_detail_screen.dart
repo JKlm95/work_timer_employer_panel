@@ -16,7 +16,11 @@ import '../../services/report_calculation_service.dart';
 import 'widgets/edit_workspace_billing_dialog.dart';
 
 class EmployeeDetailScreen extends StatefulWidget {
-  const EmployeeDetailScreen({super.key, required this.firestore, required this.trackedId});
+  const EmployeeDetailScreen({
+    super.key,
+    required this.firestore,
+    required this.trackedId,
+  });
 
   final FirestoreService firestore;
   final String trackedId;
@@ -33,7 +37,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final employerDomain = emailDomain(FirebaseAuth.instance.currentUser?.email ?? '');
+    final employerDomain = emailDomain(
+      FirebaseAuth.instance.currentUser?.email ?? '',
+    );
     if (uid == null || employerDomain == null) {
       return const Scaffold(body: Center(child: Text('Not signed in')));
     }
@@ -41,28 +47,98 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     return StreamBuilder<List<TrackedEmployee>>(
       stream: widget.firestore.trackedEmployeesStream(uid),
       builder: (context, trackedSnap) {
+        if (trackedSnap.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Employee')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_off_outlined,
+                            size: 40,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Could not load employee list',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          SelectableText(
+                            '${trackedSnap.error}',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () => context.go('/employees'),
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Back to Employees'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
         return StreamBuilder<List<EmployerGroup>>(
           stream: widget.firestore.groupsStream(uid),
           builder: (context, groupsSnap) {
+            if (groupsSnap.hasError) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Employee')),
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not load groups: ${groupsSnap.error}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
             final list = trackedSnap.data ?? [];
             TrackedEmployee? tracked;
             for (final t in list) {
               if (t.id == widget.trackedId) tracked = t;
             }
-            if (trackedSnap.connectionState == ConnectionState.waiting && tracked == null) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            if (trackedSnap.connectionState == ConnectionState.waiting &&
+                tracked == null) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
             if (tracked == null) {
               return Scaffold(
                 appBar: AppBar(title: const Text('Employee')),
-                body: const Center(child: Text('Employee not found on your list.')),
+                body: const Center(
+                  child: Text('Employee not found on your list.'),
+                ),
               );
             }
 
             final TrackedEmployee tr = tracked;
             final groups = groupsSnap.data ?? [];
             final groupName = {for (final g in groups) g.id: g.name};
-            final groupLabels = tr.groupIds.map((id) => groupName[id] ?? id).join(', ');
+            final groupLabels = tr.groupIds
+                .map((id) => groupName[id] ?? id)
+                .join(', ');
 
             return Scaffold(
               appBar: AppBar(
@@ -72,12 +148,15 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                     tooltip: 'Refresh name from directory',
                     icon: const Icon(Icons.person_search_outlined),
                     onPressed: () async {
-                      final ok = await widget.firestore.syncTrackedEmployeeProfileFromIndex(uid, tr.id);
+                      final ok = await widget.firestore
+                          .syncTrackedEmployeeProfileFromIndex(uid, tr.id);
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            ok ? 'Name fields updated from user email index.' : 'No changes, or index not available.',
+                            ok
+                                ? 'Name fields updated from user email index.'
+                                : 'No changes, or index not available.',
                           ),
                         ),
                       );
@@ -87,19 +166,72 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
               ),
               body: FutureBuilder<List<ws.Workspace>>(
                 key: ValueKey('${tr.id}_$_workspaceEpoch'),
-                future: widget.firestore.fetchEmployeeWorkspaces(tr.employeeUid),
+                future: widget.firestore.fetchEmployeeWorkspaces(
+                  tr.employeeUid,
+                ),
                 builder: (context, wsSnap) {
-                  if (!wsSnap.hasData) {
+                  if (wsSnap.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 480),
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.folder_off_outlined,
+                                    size: 40,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Could not load projects',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SelectableText(
+                                    '${wsSnap.error}',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  OutlinedButton.icon(
+                                    onPressed: _reloadWorkspaces,
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('Try again'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  if (wsSnap.connectionState == ConnectionState.waiting &&
+                      !wsSnap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final workspaces = wsSnap.data!
-                      .where((w) {
-                        final slugOk = (w.companySlug ?? '').toLowerCase() == tr.companySlug.toLowerCase();
-                        final dom = w.employeeWorkEmailDomain?.toLowerCase();
-                        final domOk = dom != null && dom == employerDomain;
-                        return slugOk && domOk;
-                      })
-                      .toList();
+                  if (!wsSnap.hasData) {
+                    return const Center(child: Text('No workspace data.'));
+                  }
+                  final workspaces = wsSnap.data!.where((w) {
+                    final slugOk =
+                        (w.companySlug ?? '').toLowerCase() ==
+                        tr.companySlug.toLowerCase();
+                    final dom = w.employeeWorkEmailDomain?.toLowerCase();
+                    final domOk = dom != null && dom == employerDomain;
+                    return slugOk && domOk;
+                  }).toList();
 
                   final calc = ReportCalculationService();
                   final period = monthContaining(DateTime.now());
@@ -121,58 +253,89 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                   child: Padding(
                                     padding: const EdgeInsets.all(20),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             CircleAvatar(
                                               radius: 28,
-                                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                              backgroundColor: Theme.of(
+                                                context,
+                                              ).colorScheme.primaryContainer,
                                               child: Text(
                                                 employeeInitials(tr),
-                                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                                                style: const TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
                                               ),
                                             ),
                                             const SizedBox(width: 16),
                                             Expanded(
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
                                                     employeeFullName(tr),
-                                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .titleLarge
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
                                                   ),
-                                                  if (employeeShowEmailAsSubtitle(tr)) ...[
+                                                  if (employeeShowEmailAsSubtitle(
+                                                    tr,
+                                                  )) ...[
                                                     const SizedBox(height: 4),
                                                     Text(
                                                       tr.employeeEmail,
-                                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                      ),
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                            color: Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                          ),
                                                     ),
                                                   ],
                                                   const SizedBox(height: 8),
-                                                  Text('Company: ${tr.companyName}'),
+                                                  Text(
+                                                    'Company: ${tr.companyName}',
+                                                  ),
                                                   const SizedBox(height: 8),
                                                   Text(
-                                                    groupLabels.isEmpty ? 'Groups: —' : 'Groups: $groupLabels',
-                                                    style: Theme.of(context).textTheme.bodyMedium,
+                                                    groupLabels.isEmpty
+                                                        ? 'Groups: —'
+                                                        : 'Groups: $groupLabels',
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.bodyMedium,
                                                   ),
                                                   const SizedBox(height: 12),
                                                   Wrap(
                                                     spacing: 12,
                                                     runSpacing: 8,
-                                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                                    crossAxisAlignment:
+                                                        WrapCrossAlignment
+                                                            .center,
                                                     children: [
                                                       EmployeePresenceBadge(
-                                                        firestore: widget.firestore,
+                                                        firestore:
+                                                            widget.firestore,
                                                         tracked: tr,
                                                       ),
                                                       FutureBuilder<DateTime?>(
-                                                        future: widget.firestore.fetchLastActivityAt(tr.employeeUid),
+                                                        future: widget.firestore
+                                                            .fetchLastActivityAt(
+                                                              tr.employeeUid,
+                                                            ),
                                                         builder: (context, la) {
                                                           final d = la.data;
                                                           final text = d == null
@@ -180,15 +343,33 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                                               : 'Last activity: ${DateFormat.yMMMd().add_jm().format(d)}';
                                                           return Text(
                                                             text,
-                                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                            ),
+                                                            style: Theme.of(context)
+                                                                .textTheme
+                                                                .bodySmall
+                                                                ?.copyWith(
+                                                                  color: Theme.of(
+                                                                    context,
+                                                                  ).colorScheme.onSurfaceVariant,
+                                                                ),
                                                           );
                                                         },
                                                       ),
                                                     ],
                                                   ),
-                                                  if (stats != null) ...[
+                                                  if (hdr.hasError) ...[
+                                                    const SizedBox(height: 16),
+                                                    Text(
+                                                      'Month summary unavailable: ${hdr.error}',
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: Theme.of(
+                                                              context,
+                                                            ).colorScheme.error,
+                                                          ),
+                                                    ),
+                                                  ] else if (stats != null) ...[
                                                     const SizedBox(height: 16),
                                                     Wrap(
                                                       spacing: 12,
@@ -197,11 +378,14 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                                         _infoChip(
                                                           context,
                                                           'Hours this month',
-                                                          stats.hoursThisMonth.toStringAsFixed(1),
+                                                          stats.hoursThisMonth
+                                                              .toStringAsFixed(
+                                                                1,
+                                                              ),
                                                         ),
                                                         _infoChip(
                                                           context,
-                                                          'Estimated (month)',
+                                                          'Estimated (month, saved)',
                                                           stats.moneyText,
                                                         ),
                                                       ],
@@ -219,14 +403,18 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                 const SizedBox(height: 16),
                                 Text(
                                   'Projects',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   'Hourly rate and currency can be edited here (saved to employee workspace).',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                 ),
                                 const SizedBox(height: 12),
                                 if (workspaces.isEmpty)
@@ -238,15 +426,23 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                           Text(
                                             'No projects available for this access scope.',
                                             textAlign: TextAlign.center,
-                                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
                                           ),
                                           const SizedBox(height: 12),
                                           OutlinedButton.icon(
-                                            onPressed: () => context.go('/employees'),
+                                            onPressed: () =>
+                                                context.go('/employees'),
                                             icon: const Icon(Icons.arrow_back),
-                                            label: const Text('Back to Employees'),
+                                            label: const Text(
+                                              'Back to Employees',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -255,7 +451,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
                                 else
                                   ...workspaces.map((w) {
                                     return Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.only(
+                                        bottom: 12,
+                                      ),
                                       child: _ProjectCard(
                                         workspace: w,
                                         tracked: tr,
@@ -287,19 +485,29 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     ReportPeriod period,
     ReportCalculationService calc,
   ) async {
-    final entries = await widget.firestore.fetchEntriesInRange(tr.employeeUid, period);
-    final workspaces = await widget.firestore.fetchEmployeeWorkspaces(tr.employeeUid);
+    final entries = await widget.firestore.fetchEntriesInRange(
+      tr.employeeUid,
+      period,
+    );
+    final workspaces = await widget.firestore.fetchEmployeeWorkspaces(
+      tr.employeeUid,
+    );
     final wsMap = {for (final w in workspaces) w.id: w};
     final filtered = entries.where((e) {
       if (e.isDeleted || e.end == null) return false;
-      return wsMap[e.workspaceId]?.companySlug?.toLowerCase() == tr.companySlug.toLowerCase();
+      return wsMap[e.workspaceId]?.companySlug?.toLowerCase() ==
+          tr.companySlug.toLowerCase();
     }).toList();
     final hours = calc.hoursForEntries(filtered);
     final money = calc.estimatedAmountByCurrency(
       entries: filtered.where((e) => e.isWorkEntry).toList(),
       workspaceById: wsMap,
     );
-    final moneyText = money.isEmpty ? '—' : money.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · ');
+    final moneyText = money.isEmpty
+        ? '—'
+        : money.entries
+              .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
+              .join(' · ');
     return _EmpHeaderStats(hoursThisMonth: hours, moneyText: moneyText);
   }
 
@@ -353,11 +561,42 @@ class _ProjectCard extends StatelessWidget {
     return FutureBuilder<List<WorkEntry>>(
       future: firestore.fetchEntriesInRange(tracked.employeeUid, period),
       builder: (context, snap) {
+        if (snap.hasError) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Could not load entries for this project.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!snap.hasData) {
-          return const Card(child: SizedBox(height: 120, child: Center(child: CircularProgressIndicator())));
+          return const Card(
+            child: SizedBox(
+              height: 120,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
         }
         final all = snap.data!;
-        final scoped = all.where((e) => e.workspaceId == workspace.id && !e.isDeleted);
+        final scoped = all.where(
+          (e) => e.workspaceId == workspace.id && !e.isDeleted,
+        );
         final closed = scoped.where((e) => e.end != null).toList();
         var totalHours = 0.0;
         for (final e in closed) {
@@ -390,7 +629,8 @@ class _ProjectCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 workspace.name,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
                               ),
                             ),
                             if (workspace.isArchived)
@@ -399,7 +639,8 @@ class _ProjectCard extends StatelessWidget {
                                 child: Chip(
                                   label: const Text('Archived'),
                                   visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                 ),
                               ),
                           ],
@@ -416,13 +657,32 @@ class _ProjectCard extends StatelessWidget {
                                   ? '${workspace.hourlyRate!.toStringAsFixed(2)} ${workspace.currency ?? ''}'
                                   : 'Not set',
                             ),
-                            _chip(context, 'Hours (month)', totalHours.toStringAsFixed(1)),
-                            _chip(context, 'Billable h', billH.toStringAsFixed(1)),
-                            _chip(context, 'Non-bill. h', nonBillH.toStringAsFixed(1)),
+                            _chip(
+                              context,
+                              'Hours (month)',
+                              totalHours.toStringAsFixed(1),
+                            ),
+                            _chip(
+                              context,
+                              'Billable h',
+                              billH.toStringAsFixed(1),
+                            ),
+                            _chip(
+                              context,
+                              'Non-bill. h',
+                              nonBillH.toStringAsFixed(1),
+                            ),
                             _chip(
                               context,
                               'Estimated',
-                              money.isEmpty ? '—' : money.entries.map((e) => '${e.key} ${e.value.toStringAsFixed(2)}').join(' · '),
+                              money.isEmpty
+                                  ? '—'
+                                  : money.entries
+                                        .map(
+                                          (e) =>
+                                              '${e.key} ${e.value.toStringAsFixed(2)}',
+                                        )
+                                        .join(' · '),
                             ),
                           ],
                         ),

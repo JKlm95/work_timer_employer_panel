@@ -25,13 +25,10 @@ class ThemeController extends ChangeNotifier {
     _mode = value;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setString(
-      _kThemeModeKey,
-      switch (value) {
-        ThemeMode.light => 'light',
-        ThemeMode.dark => 'dark',
-        ThemeMode.system => 'system',
-      },
-    );
+    await p.setString(_kThemeModeKey, switch (value) {
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
+      ThemeMode.system => 'system',
+    });
   }
 }

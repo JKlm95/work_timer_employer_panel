@@ -29,17 +29,29 @@ class FirestoreService {
 
   final FirebaseFirestore _db;
 
-  CollectionReference<Map<String, dynamic>> _employerTracked(String employerUid) =>
-      _db.collection('employers').doc(employerUid).collection('trackedEmployees');
+  CollectionReference<Map<String, dynamic>> _employerTracked(
+    String employerUid,
+  ) => _db
+      .collection('employers')
+      .doc(employerUid)
+      .collection('trackedEmployees');
 
-  CollectionReference<Map<String, dynamic>> _employerGroups(String employerUid) =>
-      _db.collection('employers').doc(employerUid).collection('groups');
+  CollectionReference<Map<String, dynamic>> _employerGroups(
+    String employerUid,
+  ) => _db.collection('employers').doc(employerUid).collection('groups');
 
-  CollectionReference<Map<String, dynamic>> _employerTrackedEmployeeUids(String employerUid) =>
-      _db.collection('employers').doc(employerUid).collection('trackedEmployeeUids');
+  CollectionReference<Map<String, dynamic>> _employerTrackedEmployeeUids(
+    String employerUid,
+  ) => _db
+      .collection('employers')
+      .doc(employerUid)
+      .collection('trackedEmployeeUids');
 
   /// One doc per `employeeUid` so rules can grant `users/{employeeUid}/live/status` to this employer.
-  Future<void> _setTrackedEmployeeUidAccess(String employerUid, String employeeUid) async {
+  Future<void> _setTrackedEmployeeUidAccess(
+    String employerUid,
+    String employeeUid,
+  ) async {
     final uid = employeeUid.trim();
     if (uid.isEmpty) return;
     await _employerTrackedEmployeeUids(employerUid).doc(uid).set({
@@ -60,40 +72,53 @@ class FirestoreService {
 
   /// `users/{employeeUid}/live/status` — mobile presence / timer.
   Stream<EmployeeLiveStatus?> employeeLiveStatusStream(String employeeUid) {
-    return _db.collection('users').doc(employeeUid).collection('live').doc('status').snapshots().map((s) {
-      try {
-        if (!s.exists) {
-          if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
-            debugPrint('[LiveStatus] uid=$employeeUid no document');
+    return _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('live')
+        .doc('status')
+        .snapshots()
+        .map((s) {
+          try {
+            if (!s.exists) {
+              if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
+                debugPrint('[LiveStatus] uid=$employeeUid no document');
+              }
+              return null;
+            }
+            final data = s.data();
+            if (data == null) return null;
+            final r = EmployeeLiveStatus.fromMap(data);
+            if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
+              final presence = resolveWorkPresence(live: r);
+              final secs = r.currentAccumulatedSeconds(DateTime.now());
+              debugPrint(
+                '[LiveStatus] uid=$employeeUid timerState=${r.timerState} isOnline=${r.isOnline} '
+                'activeWorkspaceId=${r.activeWorkspaceId} activeCompanySlug=${r.activeCompanySlug} '
+                'hourlyRate=${r.hourlyRate} currency=${r.currency} lastSeenAt=${r.lastSeenAt} updatedAt=${r.updatedAt} '
+                '=> presence=$presence accumulatedSeconds=$secs',
+              );
+            }
+            return r;
+          } catch (e, st) {
+            if (kDebugMode) {
+              debugPrint('[LiveStatus] parse error uid=$employeeUid $e\n$st');
+            }
+            return null;
           }
-          return null;
-        }
-        final data = s.data();
-        if (data == null) return null;
-        final r = EmployeeLiveStatus.fromMap(data);
-        if (kDebugMode && LiveStatusDebugConfig.verboseLiveLogs) {
-          final presence = resolveWorkPresence(live: r);
-          final secs = r.currentAccumulatedSeconds(DateTime.now());
-          debugPrint(
-            '[LiveStatus] uid=$employeeUid timerState=${r.timerState} isOnline=${r.isOnline} '
-            'activeWorkspaceId=${r.activeWorkspaceId} activeCompanySlug=${r.activeCompanySlug} '
-            'hourlyRate=${r.hourlyRate} currency=${r.currency} lastSeenAt=${r.lastSeenAt} updatedAt=${r.updatedAt} '
-            '=> presence=$presence accumulatedSeconds=$secs',
-          );
-        }
-        return r;
-      } catch (e, st) {
-        if (kDebugMode) {
-          debugPrint('[LiveStatus] parse error uid=$employeeUid $e\n$st');
-        }
-        return null;
-      }
-    });
+        });
   }
 
-  Future<EmployeeLiveStatus?> fetchEmployeeLiveStatus(String employeeUid) async {
+  Future<EmployeeLiveStatus?> fetchEmployeeLiveStatus(
+    String employeeUid,
+  ) async {
     try {
-      final doc = await _db.collection('users').doc(employeeUid).collection('live').doc('status').get();
+      final doc = await _db
+          .collection('users')
+          .doc(employeeUid)
+          .collection('live')
+          .doc('status')
+          .get();
       if (!doc.exists) return null;
       final data = doc.data();
       if (data == null) return null;
@@ -118,8 +143,14 @@ class FirestoreService {
     String employeeUid, {
     bool preferServer = false,
   }) async {
-    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
-    final snap = await _db.collection('users').doc(employeeUid).collection('workspaces').get(opts);
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
+    final snap = await _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('workspaces')
+        .get(opts);
     return snap.docs.map((d) => Workspace.fromDoc(d.id, d.data())).toList();
   }
 
@@ -137,7 +168,9 @@ class FirestoreService {
     Query<Map<String, dynamic>> q = ref
         .where('start', isGreaterThanOrEqualTo: startTs)
         .where('start', isLessThanOrEqualTo: endTs);
-    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
     final snap = await q.get(opts);
     return snap.docs.map((d) => WorkEntry.fromDoc(d.id, d.data())).toList();
   }
@@ -185,7 +218,11 @@ class FirestoreService {
     });
   }
 
-  Future<void> createGroup(String employerUid, {required String name, required String colorHex}) async {
+  Future<void> createGroup(
+    String employerUid, {
+    required String name,
+    required String colorHex,
+  }) async {
     final doc = _employerGroups(employerUid).doc();
     await doc.set({
       'name': name,
@@ -213,7 +250,9 @@ class FirestoreService {
     final tracked = await _employerTracked(employerUid).get();
     for (final d in tracked.docs) {
       final data = d.data();
-      final ids = (data['groupIds'] as List?)?.map((e) => e.toString()).toList() ?? <String>[];
+      final ids =
+          (data['groupIds'] as List?)?.map((e) => e.toString()).toList() ??
+          <String>[];
       if (ids.contains(groupId)) {
         await d.reference.update({
           'groupIds': FieldValue.arrayRemove([groupId]),
@@ -227,18 +266,27 @@ class FirestoreService {
     String trackedId,
     List<String> groupIds,
   ) async {
-    await _employerTracked(employerUid).doc(trackedId).update({'groupIds': groupIds});
+    await _employerTracked(
+      employerUid,
+    ).doc(trackedId).update({'groupIds': groupIds});
   }
 
-  Future<void> removeTrackedEmployee(String employerUid, String trackedId) async {
+  Future<void> removeTrackedEmployee(
+    String employerUid,
+    String trackedId,
+  ) async {
     final ref = _employerTracked(employerUid).doc(trackedId);
     final snap = await ref.get();
     final removedUid = snap.data()?['employeeUid'] as String?;
     await ref.delete();
     if (removedUid != null && removedUid.trim().isNotEmpty) {
-      final others = await _employerTracked(employerUid).where('employeeUid', isEqualTo: removedUid).limit(1).get();
+      final others = await _employerTracked(
+        employerUid,
+      ).where('employeeUid', isEqualTo: removedUid).limit(1).get();
       if (others.docs.isEmpty) {
-        await _employerTrackedEmployeeUids(employerUid).doc(removedUid.trim()).delete();
+        await _employerTrackedEmployeeUids(
+          employerUid,
+        ).doc(removedUid.trim()).delete();
       }
     }
   }
@@ -262,7 +310,9 @@ class FirestoreService {
   }) {
     return {
       'employeeUid': index.uid.trim(),
-      'employeeEmail': index.email.trim().isNotEmpty ? index.email.trim() : employeeEmailFallback,
+      'employeeEmail': index.email.trim().isNotEmpty
+          ? index.email.trim()
+          : employeeEmailFallback,
       'employeeEmailLower': index.emailLower.trim().isNotEmpty
           ? index.emailLower.trim().toLowerCase()
           : emailLowerFallback,
@@ -270,18 +320,28 @@ class FirestoreService {
     };
   }
 
-  Map<String, dynamic> _personalEmployeePatchFromIndex(UserEmailIndex index, Map<String, dynamic> existing) {
+  Map<String, dynamic> _personalEmployeePatchFromIndex(
+    UserEmailIndex index,
+    Map<String, dynamic> existing,
+  ) {
     final desired = _personalEmployeeWriteMap(
       index,
-      employeeEmailFallback: (existing['employeeEmail'] as String?)?.trim() ?? '',
-      emailLowerFallback: (existing['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '',
+      employeeEmailFallback:
+          (existing['employeeEmail'] as String?)?.trim() ?? '',
+      emailLowerFallback:
+          (existing['employeeEmailLower'] as String?)?.trim().toLowerCase() ??
+          '',
     );
     final patch = <String, dynamic>{};
     for (final e in desired.entries) {
       final key = e.key;
       final v = e.value;
       final cur = existing[key];
-      final curNorm = cur == null ? '' : cur is String ? cur.trim() : cur.toString();
+      final curNorm = cur == null
+          ? ''
+          : cur is String
+          ? cur.trim()
+          : cur.toString();
       final newNorm = v is String ? v.trim() : v.toString();
       if (curNorm != newNorm) patch[key] = v;
     }
@@ -289,7 +349,10 @@ class FirestoreService {
   }
 
   /// Pulls latest personal fields from `userEmailIndex` into one `trackedEmployees` doc.
-  Future<bool> syncTrackedEmployeeProfileFromIndex(String employerUid, String trackedDocId) async {
+  Future<bool> syncTrackedEmployeeProfileFromIndex(
+    String employerUid,
+    String trackedDocId,
+  ) async {
     final ref = _employerTracked(employerUid).doc(trackedDocId);
     final d = await ref.get();
     if (!d.exists || d.data() == null) return false;
@@ -351,7 +414,9 @@ class FirestoreService {
     String employeeUid, {
     bool preferServer = false,
   }) async {
-    final opts = GetOptions(source: preferServer ? Source.server : Source.serverAndCache);
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
     try {
       final snap = await _db
           .collection('users')
@@ -398,13 +463,20 @@ class FirestoreService {
     final c = currency.trim().toUpperCase();
     const allowed = {'PLN', 'EUR', 'USD', 'GBP'};
     if (!allowed.contains(c)) {
-      throw WorkspaceBillingException('Currency must be PLN, EUR, USD, or GBP.');
+      throw WorkspaceBillingException(
+        'Currency must be PLN, EUR, USD, or GBP.',
+      );
     }
-    await _db.collection('users').doc(employeeUid).collection('workspaces').doc(workspaceId).update({
-      'hourlyRate': hourlyRate,
-      'currency': c,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    await _db
+        .collection('users')
+        .doc(employeeUid)
+        .collection('workspaces')
+        .doc(workspaceId)
+        .update({
+          'hourlyRate': hourlyRate,
+          'currency': c,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
   }
 
   /// Validates domain + workspace match (company/slug only — not names), then writes `trackedEmployees`.
@@ -455,10 +527,11 @@ class FirestoreService {
       );
     }
 
-    final existing = await _employerTracked(employerUid).where('employeeUid', isEqualTo: index.uid).where(
-      'companySlug',
-      isEqualTo: normalizedSlug,
-    ).limit(1).get();
+    final existing = await _employerTracked(employerUid)
+        .where('employeeUid', isEqualTo: index.uid)
+        .where('companySlug', isEqualTo: normalizedSlug)
+        .limit(1)
+        .get();
 
     if (existing.docs.isNotEmpty) {
       final doc = existing.docs.first;
@@ -467,11 +540,17 @@ class FirestoreService {
         await doc.reference.update(patch);
       }
       await _setTrackedEmployeeUidAccess(employerUid, index.uid.trim());
-      throw EmployerLinkException('This employee is already on your list for this company.');
+      throw EmployerLinkException(
+        'This employee is already on your list for this company.',
+      );
     }
 
     await _employerTracked(employerUid).add({
-      ..._personalEmployeeWriteMap(index, employeeEmailFallback: employeeWorkEmailInput.trim(), emailLowerFallback: employeeEmailLower),
+      ..._personalEmployeeWriteMap(
+        index,
+        employeeEmailFallback: employeeWorkEmailInput.trim(),
+        emailLowerFallback: employeeEmailLower,
+      ),
       'companyName': matched.companyName ?? companyNameInput.trim(),
       'companySlug': normalizedSlug,
       'addedAt': FieldValue.serverTimestamp(),

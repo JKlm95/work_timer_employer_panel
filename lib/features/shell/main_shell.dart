@@ -51,11 +51,26 @@ class _MainShellState extends State<MainShell> {
     final wide = MediaQuery.sizeOf(context).width >= 900;
 
     final destinations = [
-      const NavigationRailDestination(icon: Icon(Icons.dashboard_outlined), label: Text('Dashboard')),
-      const NavigationRailDestination(icon: Icon(Icons.people_outline), label: Text('Employees')),
-      const NavigationRailDestination(icon: Icon(Icons.folder_special_outlined), label: Text('Groups')),
-      const NavigationRailDestination(icon: Icon(Icons.payments_outlined), label: Text('Payroll report')),
-      const NavigationRailDestination(icon: Icon(Icons.settings_outlined), label: Text('Settings')),
+      const NavigationRailDestination(
+        icon: Icon(Icons.dashboard_outlined),
+        label: Text('Dashboard'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.people_outline),
+        label: Text('Employees'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.folder_special_outlined),
+        label: Text('Groups'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.payments_outlined),
+        label: Text('Payroll report'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.settings_outlined),
+        label: Text('Settings'),
+      ),
     ];
 
     if (wide) {
@@ -68,7 +83,10 @@ class _MainShellState extends State<MainShell> {
               onDestinationSelected: (i) => _go(i, context),
               leading: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-                child: Icon(Icons.schedule_rounded, color: Theme.of(context).colorScheme.primary),
+                child: Icon(
+                  Icons.schedule_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
               destinations: destinations,
             ),
@@ -109,7 +127,9 @@ class _MainShellState extends State<MainShell> {
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
-              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+              ),
               child: Align(
                 alignment: Alignment.bottomLeft,
                 child: Text(
@@ -187,10 +207,16 @@ class _TopBar extends StatelessWidget {
           children: [
             Text(
               'Employer panel',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const Spacer(),
-            Icon(Icons.mail_outline, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.mail_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 8),
             Flexible(
               child: Text(

@@ -33,7 +33,10 @@ ThemeData buildLightTheme() {
     navigationRailTheme: NavigationRailThemeData(
       backgroundColor: scheme.surface,
       selectedIconTheme: IconThemeData(color: scheme.primary),
-      selectedLabelTextStyle: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+      selectedLabelTextStyle: TextStyle(
+        color: scheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -109,7 +112,10 @@ ThemeData buildDarkTheme() {
     navigationRailTheme: NavigationRailThemeData(
       backgroundColor: scheme.surface,
       selectedIconTheme: IconThemeData(color: scheme.primary),
-      selectedLabelTextStyle: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+      selectedLabelTextStyle: TextStyle(
+        color: scheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

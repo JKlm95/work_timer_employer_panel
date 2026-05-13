@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../services/firestore_service.dart';
 
-Future<void> showCreateGroupDialog(BuildContext context, FirestoreService firestore) async {
+Future<void> showCreateGroupDialog(
+  BuildContext context,
+  FirestoreService firestore,
+) async {
   final nameCtrl = TextEditingController();
   final colorCtrl = TextEditingController(text: '#6366F1');
   bool loading = false;
@@ -60,13 +63,21 @@ Future<void> showCreateGroupDialog(BuildContext context, FirestoreService firest
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 12),
-                    Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ],
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: loading ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: loading ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: loading ? null : submit,
                 child: loading

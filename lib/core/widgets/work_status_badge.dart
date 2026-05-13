@@ -41,12 +41,15 @@ class WorkStatusBadge extends StatelessWidget {
       case WorkPresenceState.unknown:
         bg = scheme.surfaceContainerHighest;
         fg = scheme.onSurfaceVariant;
-        label = '—';
+        label = 'Unknown';
         break;
     }
 
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: compact ? 3 : 5),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 3 : 5,
+      ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),

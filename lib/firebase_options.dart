@@ -51,5 +51,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'work-timer-2dab6.firebasestorage.app',
     measurementId: 'G-LBQC7K96VQ',
   );
-
 }

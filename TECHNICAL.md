@@ -61,7 +61,38 @@ lib/
 
 - `userEmailIndex/{emailLower}` → `{ uid, email, displayName?, … }`
 
-**TODO (mobile):** Indeks po logowaniu. Status „Working” na MVP: wpis z `end == null` i `isDeleted != true`; jeśli mobilka zawsze ustawia `end`, docelowo `liveStatus` (TODO w kodzie).
+**Wymaganie (mobile):** indeks musi być utrzymywany po logowaniu — bez tego linkowanie po emailu nie zadziała.
+
+## Live status (`users/{employeeUid}/live/status`)
+
+Panel czyta **jeden dokument** na pracownika:
+
+`users/{employeeUid}/live/status`
+
+Mobilka utrzymuje ten dokument (timer, heartbeat, opcjonalnie stawka na sesji). Panel **nie zapisuje** do tej ścieżki.
+
+### Mapowanie na UI (presence)
+
+Logika w `lib/core/utils/employee_presence_utils.dart` (`resolveWorkPresence`):
+
+| UI (badge) | Warunki (uproszczenie) |
+|------------|-------------------------|
+| **Working** | `timerState` (case-insensitive) = `running` |
+| **Paused** | `timerState` = `paused` |
+| **Online** | stan „idle” (w tym brak / pusty `timerState` traktowany jak `idle`), `isOnline == true` oraz **świeży** `lastSeenAt` lub `updatedAt` (poniżej progu `kOnlineLastSeenThreshold`, domyślnie 2 min) |
+| **Offline** | brak dokumentu (null z streamu), `isOnline == false`, albo brak / przestarzały heartbeat (`lastSeenAt` / `updatedAt`) |
+| **Unknown** | m.in. ładowanie pierwszej emisji streamu, błąd streamu, albo `isOnline == null` przy świeżym czasie — UI nie zgaduje „online” |
+
+Szczegóły pól modelu: `lib/models/employee_live_status.dart`.
+
+### Live amount (szacunek w locie)
+
+- Liczone w **`lib/core/utils/live_running_amounts.dart`** (`computeLiveRunningMoneySummary`) wyłącznie w **pamięci UI** z aktualnego `EmployeeLiveStatus` + mapy workspace’ów (stawka z live doc lub z `users/.../workspaces`).
+- **Nie jest** zapisywane do Firestore i **nie zastępuje** kwot z zamkniętych wpisów (`entries`) na karcie „Estimated amount (month)”.
+
+### Legacy / hasOpenTimer
+
+Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. `hasOpenTimerStream`); prezencja w UI opiera się na **`live/status`**.
 
 ### Dane pracodawcy
 
@@ -92,7 +123,9 @@ lib/
 ## Bezpieczeństwo
 
 - Komentarze przy wrażliwych odczytach.
-- `firestore.rules` — szkic deny-all; produkcja: reguły lub Cloud Functions.
+- `firestore.rules` — szkic pod MVP; produkcja: zawężenie reguł (patrz nagłówek komentarza w pliku rules).
+- Pełniejszy opis ścieżek i read/write: **[`DATA_CONTRACT.md`](DATA_CONTRACT.md)**.
+- Lista kontrolna przed demo: **[`QA_CHECKLIST.md`](QA_CHECKLIST.md)**.
 
 ## Konfiguracja Firebase Web
 

@@ -31,13 +31,24 @@ class EmployeePresenceBadge extends StatelessWidget {
               '[LiveStatus] StreamBuilder error uid=${tracked.employeeUid} tracked=${tracked.id} ${snap.error}',
             );
             final st = snap.stackTrace;
-            if (st != null) debugPrintStack(stackTrace: st, label: 'employee_presence_stream');
+            if (st != null) {
+              debugPrintStack(
+                stackTrace: st,
+                label: 'employee_presence_stream',
+              );
+            }
           }
-          return WorkStatusBadge(state: WorkPresenceState.unknown, compact: compact);
+          return WorkStatusBadge(
+            state: WorkPresenceState.unknown,
+            compact: compact,
+          );
         }
 
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return WorkStatusBadge(state: WorkPresenceState.unknown, compact: compact);
+          return WorkStatusBadge(
+            state: WorkPresenceState.unknown,
+            compact: compact,
+          );
         }
 
         final live = snap.data;
@@ -46,10 +57,15 @@ class EmployeePresenceBadge extends StatelessWidget {
           return WorkStatusBadge(state: state, compact: compact);
         } catch (e, st) {
           if (kDebugMode) {
-            debugPrint('[LiveStatus] resolveWorkPresence failed uid=${tracked.employeeUid}: $e');
+            debugPrint(
+              '[LiveStatus] resolveWorkPresence failed uid=${tracked.employeeUid}: $e',
+            );
             debugPrintStack(stackTrace: st, label: 'employee_presence_resolve');
           }
-          return WorkStatusBadge(state: WorkPresenceState.unknown, compact: compact);
+          return WorkStatusBadge(
+            state: WorkPresenceState.unknown,
+            compact: compact,
+          );
         }
       },
     );

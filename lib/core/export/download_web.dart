@@ -3,7 +3,11 @@
 import 'dart:html' as html;
 
 /// Triggers a browser download (Flutter Web).
-void downloadTextFile(String filename, String contents, {String mimeType = 'text/plain'}) {
+void downloadTextFile(
+  String filename,
+  String contents, {
+  String mimeType = 'text/plain',
+}) {
   final blob = html.Blob([contents], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
   html.AnchorElement(href: url)

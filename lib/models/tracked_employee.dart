@@ -60,7 +60,9 @@ class TrackedEmployee extends Equatable {
     return TrackedEmployee(
       id: id,
       employeeUid: nz(index.uid).isNotEmpty ? index.uid.trim() : employeeUid,
-      employeeEmail: nz(index.email).isNotEmpty ? index.email.trim() : employeeEmail,
+      employeeEmail: nz(index.email).isNotEmpty
+          ? index.email.trim()
+          : employeeEmail,
       employeeEmailLower: nz(index.emailLower).isNotEmpty
           ? index.emailLower.trim().toLowerCase()
           : employeeEmailLower,
@@ -87,7 +89,9 @@ class TrackedEmployee extends Equatable {
       companyName: data['companyName'] as String? ?? '',
       companySlug: data['companySlug'] as String? ?? '',
       addedAt: _ts(data['addedAt']),
-      groupIds: groups is List ? groups.map((e) => e.toString()).toList() : const [],
+      groupIds: groups is List
+          ? groups.map((e) => e.toString()).toList()
+          : const [],
     );
   }
 

@@ -13,10 +13,10 @@ import '../features/shell/main_shell.dart';
 import '../services/firestore_service.dart';
 import 'go_router_refresh.dart';
 
-GoRouter createAppRouter({
-  required FirestoreService firestore,
-}) {
-  final refresh = GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges());
+GoRouter createAppRouter({required FirestoreService firestore}) {
+  final refresh = GoRouterRefreshStream(
+    FirebaseAuth.instance.authStateChanges(),
+  );
 
   return GoRouter(
     initialLocation: '/dashboard',
@@ -29,10 +29,7 @@ GoRouter createAppRouter({
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
@@ -48,7 +45,10 @@ GoRouter createAppRouter({
                 path: 'detail/:trackedId',
                 builder: (context, state) {
                   final id = state.pathParameters['trackedId']!;
-                  return EmployeeDetailScreen(firestore: firestore, trackedId: id);
+                  return EmployeeDetailScreen(
+                    firestore: firestore,
+                    trackedId: id,
+                  );
                 },
                 routes: [
                   GoRoute(

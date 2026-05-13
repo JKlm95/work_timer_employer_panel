@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('Smoke — MaterialApp renders', (WidgetTester tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: Text('Work Timer Employer')),
-      ),
+      const MaterialApp(home: Scaffold(body: Text('Work Timer Employer'))),
     );
     expect(find.text('Work Timer Employer'), findsOneWidget);
   });

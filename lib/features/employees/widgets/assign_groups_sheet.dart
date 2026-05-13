@@ -22,7 +22,9 @@ Future<void> showAssignGroupsSheet(
       return StatefulBuilder(
         builder: (context, setLocal) {
           return Padding(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -32,12 +34,16 @@ Future<void> showAssignGroupsSheet(
                   children: [
                     Text(
                       'Assign groups',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       employeeFullName(tracked),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     if (employeeShowEmailAsSubtitle(tracked))
                       Text(
@@ -64,7 +70,8 @@ Future<void> showAssignGroupsSheet(
                           },
                           title: Text(g.name),
                           secondary: CircleAvatar(
-                            backgroundColor: _parseHex(g.colorHex) ?? Colors.grey,
+                            backgroundColor:
+                                _parseHex(g.colorHex) ?? Colors.grey,
                             radius: 12,
                           ),
                         ),
@@ -74,7 +81,11 @@ Future<void> showAssignGroupsSheet(
                       onPressed: allGroups.isEmpty
                           ? null
                           : () async {
-                              await firestore.setTrackedEmployeeGroups(employerUid, tracked.id, selected);
+                              await firestore.setTrackedEmployeeGroups(
+                                employerUid,
+                                tracked.id,
+                                selected,
+                              );
                               if (context.mounted) Navigator.pop(context);
                             },
                       child: const Text('Save'),
