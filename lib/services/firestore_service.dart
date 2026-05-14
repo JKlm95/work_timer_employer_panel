@@ -1067,7 +1067,9 @@ class FirestoreService {
         void emit() {
           final merged = <WorkEntry>[for (final l in lists) ...l]
             ..sort((a, b) => a.start.compareTo(b.start));
-          if (EmployerEntriesDebugConfig.tracePipelineForEmployee(employeeUid)) {
+          if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+            employeeUid,
+          )) {
             _logEmployerEntriesStreamEmitTrace(
               employerUid: employerUid,
               employeeUid: employeeUid,

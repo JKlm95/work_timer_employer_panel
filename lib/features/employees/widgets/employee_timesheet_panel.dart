@@ -483,7 +483,9 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     Workspace? workspaceFor(WorkEntry e) =>
         workspaceForEmployerEntry(wsLookup, widget.employeeUid, e.workspaceId);
 
-    if (EmployerEntriesDebugConfig.tracePipelineForEmployee(widget.employeeUid)) {
+    if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+      widget.employeeUid,
+    )) {
       final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
       debugPrint(
         '[Timesheet/_buildBody TRACE] employer=${widget.employerUid} '

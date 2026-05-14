@@ -359,11 +359,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           period,
           preferServer: preferServer,
         );
-        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(t.employeeUid)) {
-          final trackedIds = await widget.firestore.trackedWorkspaceIdsForEmployee(
-            employerUid,
-            t.employeeUid,
-          );
+        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+          t.employeeUid,
+        )) {
+          final trackedIds = await widget.firestore
+              .trackedWorkspaceIdsForEmployee(employerUid, t.employeeUid);
           final sortedTracked = trackedIds.toList()..sort();
           debugPrint(
             '[Dashboard/_loadDashboardSnapshot TRACE] employee=${t.employeeUid} '
@@ -401,7 +401,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
           return true;
         }).toList();
-        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(t.employeeUid)) {
+        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+          t.employeeUid,
+        )) {
           debugPrint(
             '[Dashboard/_loadDashboardSnapshot TRACE] employee=${t.employeeUid} '
             'afterStatsFilter retained=${filtered.length} '
@@ -422,9 +424,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 t.employeeUid,
                 hit.workspaceId,
               );
-              final pass = !hit.isDeleted &&
-                  hit.end != null &&
-                  ws != null;
+              final pass = !hit.isDeleted && hit.end != null && ws != null;
               debugPrint(
                 '[Dashboard/_loadDashboardSnapshot TRACE] FOCUS entryId=$fid '
                 'statsRowIncluded=$pass '
