@@ -1,193 +1,302 @@
-# Work Timer Employer Panel — dokumentacja techniczna
+# Work Timer Employer Panel — dokumentacja techniczna (implementacja)
 
-## Stack
+Ten dokument opisuje **aktualny stan kodu** panelu pracodawcy: architekturę, routing, warstwę serwisów, modele, ścieżki Firestore, strategię zapytań, reguły bezpieczeństwa i narzędzia debug. Jest uzupełnieniem **[README.md](README.md)** (produkt) oraz **[DATA_CONTRACT.md](DATA_CONTRACT.md)** (kontrakt ścieżek i „truth”).
 
-| Komponent | Użycie |
-|-----------|--------|
-| Flutter Web | UI, routing (`go_router`) |
-| Firebase Core / Auth | Inicjalizacja, logowanie pracodawcy |
-| Cloud Firestore | Odczyt danych pracowników + zapis danych panelu pracodawcy + MVP: `hourlyRate` / `currency` na workspace |
-| `provider` | `ThemeController` przy korzeniu aplikacji (`ChangeNotifierProvider`) |
-| `shared_preferences` | Persystencja trybu motywu (light / dark / system) na Web |
-| Architektura | Feature folders (`lib/features/…`), serwisy (`lib/services/…`), modele (`lib/models/…`) |
+---
 
-Stan ekranów nadal opiera się głównie na **`StreamBuilder`** / **`FutureBuilder`** + Firestore (MVP).
-
-## Motyw (jasny / ciemny)
-
-- **`lib/core/theme/app_theme.dart`** — `buildLightTheme()` i `buildDarkTheme()`: Material 3, wspólna estetyka SaaS (indygo + slate), karty, rail, tabele, pola formularzy.
-- **`lib/core/theme/theme_controller.dart`** — `ThemeMode`, zapis do `SharedPreferences` pod kluczem `theme_mode`.
-- **`lib/app.dart`** — `MaterialApp.router` z `theme`, `darkTheme`, `themeMode` z `ThemeController`.
-- **`lib/main.dart`** — `await themeController.load()` przed `runApp`; `ChangeNotifierProvider.value` owija `WorkTimerEmployerApp`.
-- **Ustawienia** — `SegmentedButton<ThemeMode>` (System / Light / Dark).
-
-## Struktura katalogów `lib/`
+## 1. Architektura katalogów (`lib/`)
 
 ```
 lib/
-  main.dart              # Firebase + ThemeController.load + Provider root
-  app.dart               # MaterialApp.router + theme / darkTheme / themeMode
-  firebase_options.dart  # flutterfire configure (placeholdery domyślnie)
+  main.dart                 # Firebase.initializeApp, ThemeController, FirestoreService, GoRouter (opcjonalnie: EmployerEntriesDebugConfig — patrz §16)
+  app.dart                  # MaterialApp.router, motywy M3 z ThemeController
+  firebase_options.dart     # FlutterFire (placeholdery do podmiany)
   core/
-    theme/               # app_theme.dart, theme_controller.dart
-    utils/               # Domena emaila, slug firmy, okresy raportów, nazwy pracowników
-    export/              # Pobieranie plików na Web (conditional import)
-    widgets/             # m.in. WorkStatusBadge
-  models/                # Workspace, WorkEntry, TrackedEmployee, EmployerGroup, UserEmailIndex, EmployeeWorkEmailIndex
+    debug/                  # EmployerEntriesDebugConfig, LiveStatusDebugConfig
+    theme/                  # app_theme.dart, theme_controller.dart
+    utils/                  # domeny emaili, okresy raportów, presence, live amounts, lookup workspace (klucz złożony), chunkowanie whereIn, polityka tracked workspace, eksport web
+    export/                 # warunkowy import pobierania plików (Web)
+    widgets/                # empty state, loading, avatar, toolbary, badge statusu
+  models/                   # encje DTO Firestore (patrz §5)
   services/
     firebase_auth_service.dart
-    firestore_service.dart       # Zapytania, linkowanie, billing workspace, presence
+    firestore_service.dart  # centralny dostęp Firestore (§4)
     report_calculation_service.dart
-    export_service.dart          # CSV (escape komórek)
+    export_service.dart
   features/
-    auth/ login_screen.dart
-    shell/ main_shell.dart       # Sidebar / drawer + top bar (kolory ze scheme)
+    auth/                   # logowanie
+    shell/                  # MainShell — rail / drawer + child
     dashboard/
-    employees/
+    employees/              # lista, szczegół, timesheet (widgety), add employee
     groups/
-    reports/                     # Raport projektu + payroll
-    settings/                    # Motyw + wylogowanie
-  router/ app_router.dart        # GoRouter + ShellRoute + redirect auth
+    reports/                # project_report_screen, payroll_screen
+    settings/
+  router/
+    app_router.dart         # GoRouter + ShellRoute + redirect (§2)
+    go_router_refresh.dart  # odświeżanie routera na authStateChanges
 ```
 
-## Model danych Firestore (założenia)
+**Wzorzec UI (MVP):** ekrany budowane z **`StreamBuilder`** / **`FutureBuilder`** i cienką warstwą serwisów; brak globalnego state managera biznesowego (poza `ThemeController`).
 
-### Aplikacja mobilna
+---
 
-- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `companyName`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`, **`isSharedWithEmployer`**
-- `users/{employeeUid}/entries/{entryId}` — wpisy czasu; `isDeleted`, `entryType`, `isBillable`, `start`/`end`
+## 2. Routing (`lib/router/app_router.dart`)
 
-### Indeks work email → UID + workspace ids
+- **`GoRouterRefreshStream`** — nasłuchuje `FirebaseAuth.instance.authStateChanges()` i wymusza re-evaluację `redirect` po zalogowaniu / wylogowaniu.
+- **`redirect`:** brak sesji i ścieżka ≠ `/login` → `/login`; zalogowany i `/login` → `/dashboard`.
+- **`initialLocation`:** `/dashboard`.
+- **`ShellRoute`** — wspólna obudowa (`MainShell`) dla tras aplikacji.
+- **Trasy (path → ekran):**
+  - `/login` → `LoginScreen`
+  - `/dashboard` → `DashboardScreen(firestore)`
+  - `/employees` → `EmployeesScreen`
+  - `/employees/detail/:trackedId` → `EmployeeDetailScreen(trackedId)`
+  - `/employees/detail/:trackedId/workspace/:workspaceId/report` → `ProjectReportScreen`
+  - `/groups` → `GroupsScreen`
+  - `/payroll` → `PayrollScreen`
+  - `/settings` → `SettingsScreen`
 
-- `employeeWorkEmailIndex/{workEmailLower}` → `{ uid, workEmailLower, domain, workspaceIds[], updatedAt? }`
+Identyfikator w `detail/:trackedId` to **id dokumentu** `employers/.../trackedEmployees/{trackedId}`, nie zawsze równy `employeeUid`.
 
-**Wymaganie (mobile):** indeks musi być utrzymywany po ustawieniu work email na udostępnionych workspace’ach — bez tego panel nie znajdzie pracownika po work email (komunikat „No shared workspace found for this work email.”).
+---
 
-### Indeks email → UID (profil)
+## 3. Przepływ autentykacji
 
-- `userEmailIndex/{emailLower}` → `{ uid, email, displayName?, … }`
+1. **`Firebase.initializeApp`** + opcje z `firebase_options.dart`.
+2. Użytkownik na **`LoginScreen`** — email/hasło przez Firebase Auth (implementacja w `FirebaseAuthService` / bezpośrednio w UI wg ekranu).
+3. Po zalogowaniu `GoRouter` przekierowuje na **`/dashboard`**.
+4. Wylogowanie ze **`SettingsScreen`** — `signOut`, router wraca na `/login`.
+5. Odczyty Firestore zakładają **`request.auth.uid` pracodawcy** zgodnie z **`firestore.rules`** (właściciel dokumentów `employers/{employerUid}/...`).
 
-**Wymaganie (mobile):** opcjonalnie dla imion na liście — `trackedEmployees` merge w UI.
+---
 
-## Live status (`users/{employeeUid}/live/status`)
+## 4. Warstwa serwisów / `FirestoreService`
 
-Panel czyta **jeden dokument** na pracownika:
+Plik: **`lib/services/firestore_service.dart`**.
 
-`users/{employeeUid}/live/status`
+**Odpowiedzialności (skrót):**
 
-Mobilka utrzymuje ten dokument (timer, heartbeat, opcjonalnie stawka na sesji). Panel **nie zapisuje** do tej ścieżki.
+- **Śledzenie:** `trackedEmployeesStream`, `trackedEmployeeUids`, `fetchTrackedWorkspaces` / `trackedWorkspaceAccessStream`, `trackedWorkspaceIdsForEmployee`.
+- **Linkowanie pracownika:** odczyt `employeeWorkEmailIndex`, walidacja domeny, filtrowanie workspace’ów (`tracked_workspace_policy`), zapis `trackedEmployees`, `trackedEmployeeUids`, `trackedWorkspaces` (`accessId = employeeUid_workspaceId`).
+- **Workspace’y pracownika dla panelu:** `fetchEmployeeWorkspacesForEmployer` (wg `trackedWorkspaces`).
+- **Wpisy:** `fetchEntriesInRangeForEmployer`, `employeeEntriesForMonthStream` (składanie wielu zapytań `whereIn` + zakres `start`), CRUD wpisów z walidacją dostępu do `workspaceId`.
+- **Billing:** `updateWorkspaceBilling` — tylko dla workspace’u obecnego w `trackedWorkspaces`.
+- **Live:** subskrypcja `users/{uid}/live/status` (wg reguł — typowo po `trackedEmployeeUids`).
+- **Ostatnia aktywność:** `fetchLastActivityAtForEmployer` — per `workspaceId` z `trackedWorkspaces`, zapytania z `orderBy('updatedAt')` i fallbackiem (§9, indeksy).
+- **Grupy:** CRUD grup, członkostwo (`applyTrackedEmployeesMembershipInGroup`, `deleteGroup` + czyszczenie martwych `groupIds`).
+- **Rebuild:** `rebuildTrackedWorkspaceAccess` (Ustawienia) — odbudowa `trackedWorkspaces` z aktualnych workspace’ów i pól na `trackedEmployees`.
 
-### Mapowanie na UI (presence)
+**Powiązane:** `ReportCalculationService` — godziny i szacowane kwoty z list wpisów + mapy workspace’ów; `ExportService` — CSV na Web.
 
-Logika w `lib/core/utils/employee_presence_utils.dart` (`resolveWorkPresence`):
+---
 
-| UI (badge) | Warunki (uproszczenie) |
-|------------|-------------------------|
-| **Working** | `timerState` (case-insensitive) = `running` |
-| **Paused** | `timerState` = `paused` |
-| **Online** | stan „idle” (w tym brak / pusty `timerState` traktowany jak `idle`), `isOnline == true` oraz **świeży** `lastSeenAt` lub `updatedAt` (poniżej progu `kOnlineLastSeenThreshold`, domyślnie 2 min) |
-| **Offline** | brak dokumentu (null z streamu), `isOnline == false`, albo brak / przestarzały heartbeat (`lastSeenAt` / `updatedAt`) |
-| **Unknown** | m.in. ładowanie pierwszej emisji streamu, błąd streamu, albo `isOnline == null` przy świeżym czasie — UI nie zgaduje „online” |
+## 5. Modele danych (DTO / domena)
 
-Szczegóły pól modelu: `lib/models/employee_live_status.dart`.
+| Model | Plik | Rola |
+|--------|------|------|
+| **TrackedEmployee** | `tracked_employee.dart` | Wiersz `employers/.../trackedEmployees` — `employeeUid`, emaile (work + legacy), firma, `groupIds`, merge z `UserEmailIndex` w UI. |
+| **TrackedWorkspaceAccess** | `tracked_workspace_access.dart` | Wiersz `trackedWorkspaces` — `employeeUid`, `workspaceId`, metadane wyświetlania; **`docIdFor` = `employeeUid_workspaceId`**. |
+| **EmployeeLiveStatus** | `employee_live_status.dart` | Dokument `users/.../live/status` — timer, online, opcjonalnie pola pod live amount. |
+| **WorkEntry** | `work_entry.dart` | `users/.../entries` — `start`, `end`, `workspaceId`, `isDeleted`, typ, billable, %, audyt. |
+| **Workspace** | `workspace.dart` | `users/.../workspaces` — stawka, waluta, flagi udostępnienia, work email / domena. |
+| **EmployerGroup** | `employer_group.dart` | `employers/.../groups` — nazwa, timestamps (opcjonalnie legacy `colorHex`). |
+| **EmployeeWorkEmailIndex** | `employee_work_email_index.dart` | Odczyt indeksu `employeeWorkEmailIndex/{workEmailLower}`. |
+| **UserEmailIndex** | `user_email_index.dart` | Profil / imię dla listy — opcjonalnie. |
 
-### Live amount (szacunek w locie)
+**Lookup workspace w UI:** `buildWorkspaceLookupByScopedKey(employeeUid, workspaces)` → mapa po kluczu **`employerWorkspaceLookupKey(employeeUid, workspaceId)`** (nie samo `workspaceId`), bo ten sam literal `workspaceId` może istnieć u różnych pracowników — patrz §8.
 
-- Liczone w **`lib/core/utils/live_running_amounts.dart`** (`computeLiveRunningMoneySummary`) wyłącznie w **pamięci UI** z aktualnego `EmployeeLiveStatus` + mapy workspace’ów (stawka z live doc lub z `users/.../workspaces`).
-- Dla panelu pracodawcy: jeśli przekazano mapę **`allowedWorkspaceIdsByEmployeeUid`** (dashboard), kwota jest liczona **tylko** gdy `activeWorkspaceId` ∈ dozwolonych ID — timer na prywatnym / innym workspace nie pokazuje kwoty w „Live running (est.)”.
-- **Nie jest** zapisywane do Firestore i **nie zastępuje** kwot z zamkniętych wpisów (`entries`) na karcie „Estimated amount (month)”.
+---
 
-### Legacy / hasOpenTimer
+## 6. Kolekcje Firestore (ścieżki)
 
-Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. `hasOpenTimerStream`); prezencja w UI opiera się na **`live/status`**.
+| Ścieżka | Zapis | Odczyt (panel) |
+|---------|--------|----------------|
+| **`employeeWorkEmailIndex/{workEmailLower}`** | Mobile (owner `uid`) | Panel przy dodawaniu pracownika |
+| **`userEmailIndex/{emailLower}`** | Mobile | Panel — merge nazw |
+| **`users/{uid}/entries/{entryId}`** | Mobile + panel (w zakresie) | Timesheet, dashboard, raporty |
+| **`users/{uid}/workspaces/{workspaceId}`** | Mobile (+ billing z panelu) | Lista projektów, stawki |
+| **`users/{uid}/live/status`** | Mobile | Presence, live running (UI) |
+| **`users/{uid}/consents/...`** | Mobile | Reguły mogą wymagać kształtu zgód (patrz `firestore.rules`) |
+| **`employers/{employerUid}/trackedEmployees/{id}`** | Panel | Lista, grupy, szczegóły |
+| **`employers/{employerUid}/trackedEmployeeUids/{employeeUid}`** | Panel | Indeks relacji; m.in. `live/status` |
+| **`employers/{employerUid}/trackedWorkspaces/{accessId}`** | Panel | **Zakres dostępu** do entries/workspace/billing |
+| **`employers/{employerUid}/groups/{groupId}`** | Panel | Organizer — **nie** zmienia uprawnień do entries |
 
-### Dane pracodawcy
+Szczegóły pól i „truth”: **[DATA_CONTRACT.md](DATA_CONTRACT.md)**.
 
-- `employers/{employerUid}/trackedEmployees/{id}`
-- `employers/{employerUid}/trackedEmployeeUids/{employeeUid}` — **indeks** „znam UID” (m.in. `live/status`); nie jest już jedynym gate’em do `entries`.
-- `employers/{employerUid}/trackedWorkspaces/{accessId}` — **`accessId = employeeUid_workspaceId`**; **rzeczywisty zakres** widocznych workspace’ów i wpisów w panelu.
-- `employers/{employerUid}/groups/{groupId}` — organizacja listy śledzonych w panelu (`name`, timestamps; opcjonalny legacy `colorHex`). **Grupy nie są mechanizmem uprawnień** — dostęp do danych pracownika w panelu wynika wyłącznie z **`trackedWorkspaces`**. Przypisania: `trackedEmployees.groupIds` (wiele grup na osobę).
-- **Ekran Groups** (`lib/features/groups/groups_screen.dart`): łączy strumienie `trackedWorkspaces`, `trackedEmployees` i `groups` — w rozwinięciu grupy widać tylko pracowników, którzy mają co najmniej jeden dokument w `trackedWorkspaces`. Sekcja **Ungrouped**: brak ważnego przypisania do istniejącej grupy (puste `groupIds` albo same martwe ID). **Manage members** zapisuje wyłącznie członkostwo w danej grupie (`FirestoreService.applyTrackedEmployeesMembershipInGroup`); usuwanie grupy domyślnie czyści `groupId` z tablic u pracowników (`deleteGroup` + batch). **Employees**: filtr „Group” (All / Ungrouped / grupa) — wyłącznie filtrowanie UI listy `trackedEmployees`, bez wpływu na `trackedWorkspaces`.
+---
 
-**Firestore indeksy:** zapytania miesięczne o wpisy u pracodawcy używają `where('workspaceId', whereIn: …)` (max 10 ID na zapytanie) + `start` — w konsoli Firebase dodaj indeks złożony na `entries`: `workspaceId` + `start` (zakres), jeśli deploy zwróci link do utworzenia indeksu.
+## 7. Flow linkowania pracownika (work email)
 
-## Ustawienia — Rebuild workspace access
+1. Normalizacja work email (trim, lowercase).
+2. Domena pracodawcy z **Firebase Auth** (`email` konta) — fragment po `@`, lowercase.
+3. Odczyt **`employeeWorkEmailIndex/{workEmailLower}`** — brak dokumentu → komunikat o braku udostępnionego workspace dla tego adresu.
+4. Porównanie **`index.domain`** z domeną pracodawcy — konflikt → komunikat o innej firmie / domenie.
+5. Pusta **`workspaceIds`** → brak udostępnionych projektów dla indeksu.
+6. Pobranie **`users/{uid}/workspaces/{id}`** dla id z indeksu; filtrowanie **`workspaceQualifiesForEmployerPanel`** (m.in. `isSharedWithEmployer`, zgodność work email i domeny).
+7. Utworzenie **`trackedEmployeeUids/{employeeUid}`**.
+8. Zapis / merge **`trackedEmployees`** (w tym `employeeWorkEmailLower` / `employeeWorkEmailDomain`).
+9. Utworzenie dokumentów **`trackedWorkspaces`** z **`accessId = "${employeeUid}_${workspaceId}"`** dla każdego zakwalifikowanego workspace’u.
 
-- Ekran **Settings** zawiera akcję **Rebuild workspace access** (`FirestoreService.rebuildTrackedWorkspaceAccess`): dla każdego `trackedEmployees` odbudowuje zestaw dokumentów `trackedWorkspaces` wg pól **work email / domena** zapisanych na wierszu śledzenia i aktualnych dokumentów `users/.../workspaces` (`tracked_workspace_policy.dart`). **Brak automatycznej migracji** przy starcie aplikacji — tylko jawny przycisk.
+**Operacyjnie:** bez utrzymania **`employeeWorkEmailIndex`** przez mobile panel nie znajdzie pracownika po samym work email.
 
-### Dozwolone zapisy MVP w danych „pracownika”
+---
 
-- Tylko **`updateWorkspaceBilling`** na `users/{uid}/workspaces/{id}` (`hourlyRate`, `currency`, `updatedAt`) — **po sprawdzeniu** `trackedWorkspaces`. Reszta danych pracownika — read-only z panelu.
+## 8. Model dostępu: per-workspace i klucz złożony
 
-## Logika dodawania pracownika (work email)
+- **Reguły** używają **`employerHasTrackedWorkspace(employeeUid, workspaceId)`** — sprawdzają istnienie dokumentu **`trackedWorkspaces/{employeeUid_workspaceId}`** (konkatenacja UID + `_` + `workspaceId`).
+- **`workspaceId` na wpisie** musi być **dokładnie** tym samym stringiem co segment w id dokumentu `trackedWorkspaces` (łącznie z ewentualnymi „dziwnymi” id typu `default` u różnych użytkowników).
+- **Dlaczego nie mapować po samym `workspaceId`:** u dwóch pracowników **ten sam** `workspaceId` (np. slug dokumentu domyślnego) to **inne** projekty. Mapy w pamięci (`buildWorkspaceLookupByScopedKey`, `workspaceForEmployerEntry`) używają klucza **`employeeUid` + `workspaceId`**, żeby uniknąć kolizji.
 
-1. Normalizacja work email (trim + lowercase) i walidacja formatu.
-2. Domena pracodawcy z **Firebase Auth** (`email` konta) — część po `@`, lowercase.
-3. Odczyt `employeeWorkEmailIndex/{workEmailLower}` — brak dokumentu → komunikat *No shared workspace found for this work email.*
-4. Porównanie `index.domain` z domeną pracodawcy — niespójność → *This workspace belongs to a different company domain.*
-5. Pusta lista `workspaceIds` → *This work email has no shared workspaces.*
-6. Pobranie dokumentów `users/{uid}/workspaces/{id}` dla id z indeksu; filtrowanie **`workspaceQualifiesForEmployerPanel`** (shared + `employeeWorkEmail` + `employeeWorkEmailDomain`) — brak wyników → *No shared workspace for your company domain.*
-7. Utworzenie / utrzymanie `trackedEmployeeUids/{uid}`.
-8. Zapis `trackedEmployees` (m.in. `employeeWorkEmailLower`, `employeeWorkEmailDomain`; imiona z `userEmailIndex` jeśli dostępny).
-9. Utworzenie dokumentów **`trackedWorkspaces`** dla wszystkich pasujących workspace’ów (`accessId = employeeUid_workspaceId`).
+**Grupy:** `groupIds` na `trackedEmployees` to **wyłącznie UI** — nie skracają i nie rozszerzają listy `trackedWorkspaces`.
 
-**Migracja:** istniejące `trackedEmployees` bez `employeeWorkEmailLower` używają w rebuildzie fallbacku `employeeEmailLower` (legacy). Warto użyć **Rebuild workspace access** po aktualizacji mobile.
+---
 
-## Wpisy czasu — timesheet pracodawcy
+## 9. Strategia zapytań o wpisy (`entries`)
 
-- Na ekranie **szczegółów pracownika** (`EmployeeDetailScreen`) panel pokazuje **timesheet miesięczny**: filtry, sortowanie, podsumowanie oraz **dodawanie / edycja / soft delete / przywracanie** wpisów w `users/{employeeUid}/entries/{entryId}` — **tylko** dla `workspaceId` obecnych w `trackedWorkspaces` (stream składa zapytania per chunk `whereIn`).
-- **Usuwanie** = wyłącznie **soft delete** (`isDeleted: true`, `updatedAt`), bez hard `delete` w Firestore.
-- **Kwoty** w tabeli i w `ReportCalculationService.estimatedAmountByCurrency` (dla wpisów `work` billable) liczą się jako:  
-  `godziny × hourlyRate workspace × billingRatePercent / 100` (brak stawki → „No rate” / „—” w UI).
-- **Eksporty CSV/PDF** nie są częścią tego modułu timesheet (osobne ekrany raportów bez zmian w zakresie eksportu z tego zadania).
+**Zakres czasu (miesiąc / raport):** zapytania employer-side filtrują pole **`start`** w przedziale **[`period.start`, `period.endInclusive`]** (inkluzywnie). Wpisy, które **zaczynają się** poza miesiącem, a kończą w środku, **nie wracają** z tego query (kontrakt „start in month”, nie overlap po `end`).
 
-## UI — wspólne komponenty (employer panel)
+**Workspace:** `where('workspaceId', whereIn: chunk)` — **`whereIn` max 10** wartości na zapytanie (`kFirestoreWhereIn` w `employer_workspace_query_utils.dart`). Większy zbiór **`trackedWorkspaceIds`** jest **dzielony na chunki**; wyniki są **mergowane** i deduplikowane po `entryId` w `fetchEntriesInRangeForEmployer`.
 
-Lekkie widgety i stałe layoutu (bez nowych zależności), używane przy empty/loading i nagłówkach:
+**Stream miesiąca (`employeeEntriesForMonthStream`):** dla bieżącego zbioru `trackedWorkspaces` składane są **równoległe** strumienie per chunk; emit to posortowana lista po `start`.
 
-| Plik | Rola |
-|------|------|
-| `lib/core/theme/app_layout.dart` | `AppLayout` — odstępy strony, sekcji, promienie, `outlineSide` dla obramowań. |
-| `lib/core/widgets/app_empty_state.dart` | Ikona + tytuł + opcjonalny podtytuł (`detailSelectable` dla błędów z zaznaczalnym tekstem). |
-| `lib/core/widgets/app_pulse_loading.dart` | `AppPulseLoading` — pulsujące prostokąty zamiast gołego spinnera. |
-| `lib/core/widgets/app_pinned_toolbar.dart` | `AppPinnedToolbarDelegate` (pinned sliver), `AppToolbarSurface` (pasek z dolną krawędzią). |
-| `lib/core/widgets/employee_avatar.dart` | `EmployeeAvatar` — inicjały + deterministyczny kolor tła z `seed` (np. `employeeUid`). |
-| `lib/features/employees/widgets/timesheet_entry_badges.dart` | `TimesheetEntryBadges` — chipy typu / % / billable / deleted / edited w timesheecie. |
+**Indeks złożony (wymagany w praktyce):** kolekcja `users/{uid}/entries` z polami **`workspaceId`** + **`start`** (równość / zakres jak w query). Brak indeksu → błąd Firestore **`failed-precondition`** z linkiem do konsoli.
 
-Motyw (`app_theme.dart`): doprecyzowane `chipTheme` i `snackBarTheme` (floating, zaokrąglenia).
+**Inne zapytania (last activity):** per `workspaceId` równość + `isDeleted` + `orderBy('updatedAt', descending: true)` (fallback: `orderBy('start', descending: true)`) — mogą wymagać **osobnych** indeksów złożonych (`workspaceId` + `isDeleted` + `updatedAt` itd.).
 
-## Obliczenia raportów (`ReportCalculationService`)
+---
 
-- Czas z `end - start`; pomijane `isDeleted` i brak `end` (poza statusem „Working”).
-- Kwoty dla wpisów billable: `duration × hourlyRate × (billingRatePercent ?? 100) / 100`; waluty bez konwersji.
+## 10. Statystyki dashboardu
 
-## Eksport CSV
+- **`DashboardScreen._loadDashboardSnapshot`** — dla każdego `TrackedEmployee`: **`fetchEntriesInRangeForEmployer`** (domyślnie **`preferServer: true`** w kodzie snapshotu), potem **`fetchEmployeeWorkspacesForEmployer`**, lookup mapy workspace’ów, **filtrowanie po stronie klienta:** odrzucenie `isDeleted`, brak `end`, oraz **`workspaceForEmployerEntry == null`**; sumy godzin i kwot z **`ReportCalculationService`**.
+- **Odświeżanie:** przycisk / powody odświeżenia (timer debounce / stream) — szczegół implementacji w `dashboard_screen.dart`; znacznik **„Last updated”** po udanym przeładowaniu snapshotu.
+- **Błędy:** try/catch w snapshotcie — w debug log; UI powinien degradować zamiast „czerwonego ekranu” (patrz QA).
 
-`ExportService` + Web download. PDF — TODO w UI.
+**Stream vs fetch:** lista pracowników i live mogą używać strumieni; **miesięczne agregaty** w tym flow opierają się na **jednorazowym fetchu** wpisów w zakresie miesiąca (nie ciągły stream wszystkich wpisów dashboardu).
 
-## Bezpieczeństwo
+---
 
-- Komentarze przy wrażliwych odczytach.
-- `firestore.rules` — szkic pod MVP; produkcja: zawężenie reguł (patrz nagłówek komentarza w pliku rules).
-- Pełniejszy opis ścieżek i read/write: **[`DATA_CONTRACT.md`](DATA_CONTRACT.md)**.
-- Lista kontrolna przed demo: **[`QA_CHECKLIST.md`](QA_CHECKLIST.md)**.
+## 11. Live status i live amount
 
-## Konfiguracja Firebase Web
+- **Źródło:** `users/{employeeUid}/live/status` (read-only z panelu).
+- **Presence:** `employee_presence_utils.dart` — mapowanie pól modelu na **Working / Paused / Online / Offline / Unknown** (progi czasu dla „online”).
+- **Live running (szacunek):** `live_running_amounts.dart` — wyłącznie **w pamięci UI**; **nie zapisuje** kwoty do Firestore.
+- **Gate `activeWorkspaceId`:** przy przekazaniu mapy dozwolonych workspace’ów kwota **nie jest** liczona, gdy aktywny workspace timera **nie** należy do zestawu śledzonych — unikamy podglądu stawek dla prywatnych / nieshared projektów.
+- **Legacy:** dodatkowe strumienie typu otwarty wpis mogą istnieć jako wsparcie; prezencja w UI opiera się na **`live/status`**.
+
+**Opcjonalne logi:** `LiveStatusDebugConfig.verboseLiveLogs` w `main.dart` (wyłączone domyślnie).
+
+---
+
+## 12. Timesheet — CRUD, soft delete, audyt
+
+- **Ekran:** szczegóły pracownika → panel timesheet (`EmployeeTimesheetPanel`) z **`employeeEntriesForMonthStream`** (zakres + `trackedWorkspaces`).
+- **Create / update:** zapis do `users/{uid}/entries` z polami zgodnymi z regułami; typowe **`createdVia: employer_panel`**, **`createdBy`**, przy edycji **`editedAt` / `editedBy`** (jeśli reguły i payload).
+- **Soft delete:** `isDeleted: true` + `updatedAt`; **restore:** `isDeleted: false`.
+- **Walidacja:** m.in. `start < end`, workspace z listy udostępnionej.
+- **Filtry UI:** `filterTimesheetEntries` + **`explainTimesheetFilterReject`** (`timesheet_entry_utils.dart`) — powód odrzucenia przy debug trace.
+
+---
+
+## 13. Grupy
+
+- **Many-to-many:** `trackedEmployees.groupIds` — tablica id dokumentów `groups`.
+- **Ekran Groups:** łączy `trackedWorkspaces`, `trackedEmployees`, `groups` — w rozwinięciu grupy tylko pracownicy z realnym dostępem workspace.
+- **Ungrouped:** brak ważnego przypisania do istniejącej grupy.
+- **Uprawnienia:** grupy **nie** są sprawdzane w `firestore.rules` dla `entries` / `workspaces` — wyłącznie **`employerHasTrackedWorkspace`**.
+
+---
+
+## 14. Firestore rules — założenia
+
+Plik: **`firestore.rules`**.
+
+- **Employer** jest „właścicielem” tylko własnego **`employers/{request.auth.uid}/...`**.
+- **Odczyt wpisów pracownika** przez pracodawcę: `employerHasTrackedWorkspace(uid, resource.data.workspaceId)` na istniejącym dokumencie.
+- **Zapis wpisów przez pracodawcę:** funkcje **`employerEntryCreateValid` / `employerEntryUpdateValid`** (m.in. zgodność `workspaceId` z `trackedWorkspaces`, kształt pól).
+- **`employeeWorkEmailIndex`:** zapis tylko gdy **`request.auth.uid == resource.uid`** (indeks należy do pracownika) — pracodawca **czyta**, nie tworzy indeksu za employee.
+- **Workspace read:** dodatkowa ścieżka bootstrap (`employerTracksUser` + `isSharedWithEmployer`) w regułach — szczegół w pliku; **faktyczny zakres produktu** i tak opiera się na synchronizacji **`trackedWorkspaces`**.
+- **Zgody prawne:** ścieżki pod `users/{uid}/consents/...` i funkcje kształtu — mobile może musieć spełnić wymagania przed zapisem danych (patrz reguły).
+
+Produkcja: reguły wymagają przeglądu pod konkretny model zgód i organizacji.
+
+---
+
+## 15. Indeksy złożone
+
+Repozytorium **nie zawiera** gotowego `firestore.indexes.json` — indeksy tworzy się w **Firebase Console** lub z linku z błędu **`failed-precondition`**.
+
+**Typowe indeksy do rozważenia (subkolekcja `entries` u danego `users/{uid}`):**
+
+| Pola (kierunek) | Kontekst |
+|-----------------|------------|
+| `workspaceId` ASC, `start` ASC, `__name__` ASC | Miesięczne zapytania: `whereIn` + zakres na `start` |
+| `workspaceId` ASC, `isDeleted` ASC, `updatedAt` DESC | Ostatnia aktywność (employer) |
+| `workspaceId` ASC, `start` DESC | Fallback last activity bez `updatedAt` |
+| `isDeleted` ASC, `updatedAt` DESC | `fetchLastActivityAt` (owner) |
+
+Kierunki **ASC/DESC** musą **dokładnie** pasować do zapytania (`orderBy` + filtry). Firebase podpowie brakujący indeks w komunikacie błędu.
+
+---
+
+## 16. Narzędzia debug
+
+- **`EmployerEntriesDebugConfig`** (`lib/core/debug/employer_entries_debug_config.dart`): `verboseTrace`, `focusEmployeeUid`, `focusEntryId`. Szczegółowe logi ścieżki wpisów w **`fetchEntriesInRangeForEmployer`**, **`employeeEntriesForMonthStream`**, **`DashboardScreen._loadDashboardSnapshot`**, **`EmployeeTimesheetPanel`** — **tylko gdy `kDebugMode` i włączony trace** (patrz getter `traceDetailed` w pliku).
+- **`LiveStatusDebugConfig`** — osobno dla snapshotów live (domyślnie wyłączone).
+
+**Repozytarium:** w **`lib/main.dart`** mogą być **tymczasowo** ustawione stałe UID / entryId — **usuń lub zastąp `--dart-define` / lokalnym plikiem** przed publicznym release lub udostępnieniem buildu poza zaufanym kręgiem.
+
+---
+
+## 17. Testy (`test/`)
+
+Uruchomienie: `flutter test`.
+
+Przykładowe obszary pokryte testami jednostkowymi:
+
+- `employer_workspace_lookup_test.dart` — klucz złożony lookup.
+- `employer_workspace_query_utils_test.dart` — chunkowanie `whereIn`.
+- `tracked_workspace_policy_test.dart` — kwalifikacja workspace dla panelu.
+- `work_email_employer_access_test.dart` — logika email / domena.
+- `employee_presence_utils_test.dart`, `employee_live_status_test.dart` — presence.
+- `live_running_amounts_test.dart` — live amount i gate workspace.
+- `timesheet_entry_utils_test.dart` — `filterTimesheetEntries` i sortowanie.
+- `entry_amount_breakdown_test.dart`, `report_calculation_service` (jeśli testowany przez import), `employer_entry_soft_patch_test.dart`, `employer_group_ids_utils_test.dart`, `tracked_employee_display_test.dart`, itd.
+
+---
+
+## 18. Znane ograniczenia
+
+- Brak Google Sign-In w MVP.
+- Skalowanie: wiele chunków `whereIn`, brak paginacji na dużych listach wpisów w jednym miesiącu.
+- Agregacje miesięczne na dashboardzie — kosztowne przy wielu pracownikach (N× fetch).
+- PDF z raportów — niewdrożony lub TODO względem CSV.
+- Reguły i indeksy muszą być utrzymywane ręcznie w deployu Firebase.
+
+---
+
+## 19. Możliwe usprawnienia (techniczne)
+
+- Cloud Functions dla atomowego linkowania i walidacji po stronie serwera.
+- Indeks **`firestore.indexes.json`** w repo + `firebase deploy --only firestore:indexes`.
+- Warstwa cache / deduplikacja zapytań dashboardu.
+- Paginacja timesheetu i server-side sumy.
+- Rozszerzenie testów integracyjnych z emulatorem Firestore.
+
+---
+
+## Powiązane dokumenty
+
+- **[README.md](README.md)** — opis produktu.
+- **[DATA_CONTRACT.md](DATA_CONTRACT.md)** — kontrakt ścieżek i zapisów.
+- **[QA_CHECKLIST.md](QA_CHECKLIST.md)** — checklist regresji.
+
+## Konfiguracja i jakość kodu
 
 ```bash
-dart pub global activate flutterfire_cli
-flutterfire configure
-```
-
-## Analiza i testy
-
-```bash
+flutterfire configure   # lib/firebase_options.dart
 flutter analyze
 flutter test
 ```
 
-## Znane ograniczenia MVP
-
-- Brak Google Sign-In (opcjonalnie później).
-- Indeksy Firestore pod zapytania z `orderBy` / `where` — konsola może zaproponować link.
-- Duże org.: paginacja / backend dla agregacji.
+Motyw M3, wspólne widgety layoutu: **`lib/core/theme/app_theme.dart`**, **`app_layout.dart`**, **`app_empty_state.dart`**, **`app_pulse_loading.dart`** — patrz poprzednie opisy w historii commitów / kodzie źródłowym.

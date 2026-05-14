@@ -1,6 +1,6 @@
 # QA checklist — employer panel (MVP)
 
-Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (Auth + Firestore) i zdeployowaną mobilkę zapisującą dane zgodnie z [`DATA_CONTRACT.md`](DATA_CONTRACT.md).
+Krótka lista regresji przed releasem lub demo. Zakłada działający Firebase (Auth + Firestore) i zdeployowaną mobilkę zapisującą dane zgodnie z [`DATA_CONTRACT.md`](DATA_CONTRACT.md).
 
 ## Grupy (panel)
 

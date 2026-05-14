@@ -1,6 +1,6 @@
 # Data contract — employer panel & mobile (Firestore)
 
-Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację mobilną Work Timer i panel pracodawcy (`work_timer_employer_panel`). Ma ułatwić onboarding, QA i portfolio — **nie zastępuje** `firestore.rules`.
+Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację mobilną Work Timer i panel pracodawcy (`work_timer_employer_panel`). Ma ułatwić onboarding i QA — **nie zastępuje** `firestore.rules`.
 
 ## Kolekcje i dokumenty
 
@@ -41,6 +41,7 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 - **Źródło prawdy:** tak — wpisy czasu (mobile + ewentualnie zapis z panelu pracodawcy).
 - **Czyta:** panel (raporty, dashboard, **timesheet** na karcie pracownika).
 - **Zapisuje:** **mobile** (domyślnie) oraz **pracodawca** z panelu — **tylko** gdy istnieje dokument **`employers/{employerUid}/trackedWorkspaces/{employeeUid_workspaceId}`** dla `workspaceId` wpisu (patrz `firestore.rules`). Dozwolone operacje: **create** / **update** (w tym **soft delete**: `isDeleted: true`, **restore**: `isDeleted: false`). **Hard delete** (`delete`) jest zabroniony w regułach.
+- **Zapytania miesięczne (panel):** filtr **`workspaceId` + `whereIn` (≤10 wartości na query, chunkowanie po stronie klienta)** oraz zakres na polu **`start`**. Wymaga **indeksu złożonego** w Firestore na `workspaceId` + `start` (kierunek zgodny z query — typowo ASC); brak indeksu → błąd `failed-precondition` z linkiem w konsoli. Szczegóły: **[TECHNICAL.md](TECHNICAL.md)** (sekcja o indeksach).
 - **Kwota w panelu:** szacunek `duration × workspace.hourlyRate × (billingRatePercent ?? 100) / 100` dla zamkniętych wpisów (szczegóły w `lib/core/utils/entry_amount_breakdown.dart` i `ReportCalculationService.estimatedAmountByCurrency`).
 - **Pola audytu (opcjonalne):** `editedAt`, `editedBy`, `createdBy`, `createdVia` — ustawiane przy zapisie z panelu (`createdVia: employer_panel`), jeśli reguły i payload to przepuszczą.
 
@@ -86,4 +87,4 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 ## Spójność z mobile
 
-Mobile musi utrzymywać: **`employeeWorkEmailIndex`** (po udostępnieniu workspace’u pracodawcy), **`userEmailIndex`** (opcjonalnie dla imion na liście), **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z modelem pól panelu (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`, `billingRatePercent`, pola audytu jeśli używane). Dla udostępniania workspace’u: **`isSharedWithEmployer`**, **`employeeWorkEmail`**, **`employeeWorkEmailDomain`** (wyliczany). **`linkedEmployerEmails`** nie jest już używane do dostępu pracodawcy w tym panelu. Panel może **dopisywać i poprawiać** wpisy w `entries` u śledzonych pracowników — **wyłącznie** w workspace’ach obecnych w `trackedWorkspaces` — zgodnie z `firestore.rules`.
+Mobile musi utrzymywać: **`employeeWorkEmailIndex`** (po udostępnieniu workspace’u pracodawcy), **`userEmailIndex`** (opcjonalnie dla imion na liście), **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z modelem pól panelu (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`, `billingRatePercent`, pola audytu jeśli używane). Zapytania panelu o wpisy wymagają **poprawnych indeksów złożonych** (`workspaceId` + `start` oraz ewentualnie indeksy pod `last activity` — patrz **[TECHNICAL.md](TECHNICAL.md)**). Dla udostępniania workspace’u: **`isSharedWithEmployer`**, **`employeeWorkEmail`**, **`employeeWorkEmailDomain`** (wyliczany). **`linkedEmployerEmails`** nie jest już używane do dostępu pracodawcy w tym panelu. Panel może **dopisywać i poprawiać** wpisy w `entries` u śledzonych pracowników — **wyłącznie** w workspace’ach obecnych w `trackedWorkspaces` — zgodnie z `firestore.rules`.
