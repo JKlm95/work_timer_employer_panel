@@ -1,177 +1,563 @@
 rules_version = '2';
 
-// TODO: Replace with production rules before launch. This file is a draft — it does NOT
-// grant safe access by itself. Expect either:
-// - Fine-grained Firestore rules (employer can only read linked employees / indices), or
-// - Cloud Functions / backend that validates employer ↔ employee relationships.
-//
-// Production documentation notes (do not relax blindly):
-// - `userEmailIndex/{emailLower}` below allows read for any authenticated user (`request.auth != null`).
-//   In production, restrict reads e.g. to employers who have linked the employee, or serve lookups
-//   only via Cloud Functions, so the index is not enumerable by arbitrary signed-in clients.
-// - Employer access to `users/{employeeUid}/...` uses `trackedWorkspaces` for entries and
-//   workspace reads when `isSharedWithEmployer` is set; `trackedEmployeeUids` remains for
-//   live/status and bootstrap listing. See DATA_CONTRACT.md.
-//
-// MVP frontend assumes these collections/paths:
-// - employeeWorkEmailIndex/{workEmailLower}
-// - userEmailIndex/{emailLower}
-// - users/{uid}/workspaces/{workspaceId}
-// - users/{uid}/entries/{entryId}
-// - users/{uid}/live/status
-// - employers/{employerUid}/trackedEmployees/{id}
-// - employers/{employerUid}/trackedEmployeeUids/{employeeUid}
-// - employers/{employerUid}/trackedWorkspaces/{accessId}
-// - employers/{employerUid}/groups/{groupId}
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function employerTracksUser(employeeUid) {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedEmployeeUids/$(employeeUid));
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function trackedWorkspaceId(employeeUid, workspaceId) {
+      return employeeUid + '_' + workspaceId;
+    }
+
+    function employerTracksUser(userId) {
+      return isSignedIn() &&
+          exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedEmployeeUids/$(userId));
     }
 
     function employerHasTrackedWorkspace(employeeUid, workspaceId) {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedWorkspaces/$(employeeUid + '_' + workspaceId));
+      return isSignedIn() &&
+          exists(/databases/$(database)/documents/employers/$(request.auth.uid)/trackedWorkspaces/$(trackedWorkspaceId(employeeUid, workspaceId)));
     }
 
-    function sharedWorkspaceEmployerListReadOk(userId) {
-      return employerTracksUser(userId) && (
-        !('isSharedWithEmployer' in resource.data) ||
-        resource.data.isSharedWithEmployer == true
-      );
+    function optionalString(data, key) {
+      return !data.keys().hasAny([key]) || data[key] is string;
     }
 
-    // Employer panel may create/update time entries (soft delete via isDeleted); no hard deletes.
-    function employerEntryBillingPercentOk() {
-      return !('billingRatePercent' in request.resource.data) ||
-        (request.resource.data.billingRatePercent is int &&
-          (request.resource.data.billingRatePercent == 50 ||
-            request.resource.data.billingRatePercent == 80 ||
-            request.resource.data.billingRatePercent == 100 ||
-            request.resource.data.billingRatePercent == 150 ||
-            request.resource.data.billingRatePercent == 200)) ||
-        (request.resource.data.billingRatePercent is float &&
-          (request.resource.data.billingRatePercent == 50.0 ||
-            request.resource.data.billingRatePercent == 80.0 ||
-            request.resource.data.billingRatePercent == 100.0 ||
-            request.resource.data.billingRatePercent == 150.0 ||
-            request.resource.data.billingRatePercent == 200.0));
+    function optionalBool(data, key) {
+      return !data.keys().hasAny([key]) || data[key] is bool;
+    }
+
+    function optionalList(data, key) {
+      return !data.keys().hasAny([key]) || data[key] is list;
+    }
+
+    function optionalNumber(data, key) {
+      return !data.keys().hasAny([key]) || data[key] is number;
+    }
+
+    function optionalTimestamp(data, key) {
+      return !data.keys().hasAny([key]) || data[key] == null || data[key] is timestamp;
+    }
+
+    function billingRatePercentOk(data) {
+      return !data.keys().hasAny(['billingRatePercent']) ||
+          (
+            data.billingRatePercent is int &&
+            (
+              data.billingRatePercent == 50 ||
+              data.billingRatePercent == 80 ||
+              data.billingRatePercent == 100 ||
+              data.billingRatePercent == 150 ||
+              data.billingRatePercent == 200
+            )
+          );
+    }
+
+    function billingRatePercentOkEntry(data) {
+      return !data.keys().hasAny(['billingRatePercent']) ||
+          (
+            data.billingRatePercent is int &&
+            (
+              data.billingRatePercent == 50 ||
+              data.billingRatePercent == 80 ||
+              data.billingRatePercent == 100 ||
+              data.billingRatePercent == 150 ||
+              data.billingRatePercent == 200
+            )
+          ) ||
+          (
+            data.billingRatePercent is float &&
+            (
+              data.billingRatePercent == 50.0 ||
+              data.billingRatePercent == 80.0 ||
+              data.billingRatePercent == 100.0 ||
+              data.billingRatePercent == 150.0 ||
+              data.billingRatePercent == 200.0
+            )
+          );
+    }
+
+    function optionalEmployerEmailRefsListOk(data) {
+      return !data.keys().hasAny(['linkedEmployerEmails']) ||
+          (
+            data.linkedEmployerEmails is list &&
+            data.linkedEmployerEmails.size() <= 32
+          );
+    }
+
+    function entryOptionalAuditFieldsOk(data) {
+      return (!data.keys().hasAny(['editedAt']) || data.editedAt is timestamp) &&
+          (!data.keys().hasAny(['editedBy']) ||
+              (data.editedBy is string && data.editedBy.size() > 0 && data.editedBy.size() <= 128)) &&
+          (!data.keys().hasAny(['createdBy']) ||
+              (data.createdBy is string && data.createdBy.size() > 0 && data.createdBy.size() <= 128)) &&
+          (!data.keys().hasAny(['createdVia']) ||
+              (data.createdVia is string && data.createdVia.size() > 0 && data.createdVia.size() <= 64));
+    }
+
+    function hasValidEntryShape(data) {
+      return data.keys().hasAll([
+            'workspaceId',
+            'start',
+            'end',
+            'mode',
+            'updatedAt',
+            'isDeleted'
+          ]) &&
+          data.keys().hasOnly([
+            'workspaceId',
+            'start',
+            'end',
+            'mode',
+            'updatedAt',
+            'isDeleted',
+            'taskTitle',
+            'note',
+            'isBillable',
+            'entryType',
+            'billingRatePercent',
+            'editedAt',
+            'editedBy',
+            'createdBy',
+            'createdVia'
+          ]) &&
+          billingRatePercentOkEntry(data) &&
+          data.workspaceId is string &&
+          data.workspaceId.size() > 0 &&
+          data.workspaceId.size() <= 128 &&
+          data.start is timestamp &&
+          data.end is timestamp &&
+          data.end > data.start &&
+          data.updatedAt is timestamp &&
+          data.mode is string &&
+          data.mode.size() <= 64 &&
+          data.isDeleted is bool &&
+          optionalString(data, 'taskTitle') &&
+          (!data.keys().hasAny(['taskTitle']) || data.taskTitle.size() <= 4000) &&
+          optionalString(data, 'note') &&
+          (!data.keys().hasAny(['note']) || data.note.size() <= 4000) &&
+          optionalBool(data, 'isBillable') &&
+          optionalString(data, 'entryType') &&
+          (!data.keys().hasAny(['entryType']) || data.entryType.size() <= 64) &&
+          entryOptionalAuditFieldsOk(data);
     }
 
     function employerEntryCoreFieldsValid() {
       let e = request.resource.data;
       return e.workspaceId is string &&
-        e.workspaceId.size() > 0 &&
-        e.workspaceId.size() <= 128 &&
-        e.start is timestamp &&
-        e.updatedAt is timestamp &&
-        e.isDeleted is bool &&
-        (!('end' in e) || e.end == null || (e.end is timestamp && e.end > e.start)) &&
-        (!('mode' in e) || (e.mode is string && e.mode.size() <= 64)) &&
-        (!('taskTitle' in e) || (e.taskTitle is string && e.taskTitle.size() <= 4000)) &&
-        (!('note' in e) || (e.note is string && e.note.size() <= 4000)) &&
-        (!('entryType' in e) || (e.entryType is string && e.entryType.size() <= 64)) &&
-        (!('createdVia' in e) || (e.createdVia is string && e.createdVia.size() <= 64)) &&
-        (!('createdBy' in e) || (e.createdBy is string && e.createdBy.size() <= 128)) &&
-        (!('editedBy' in e) || (e.editedBy is string && e.editedBy.size() <= 128)) &&
-        (!('editedAt' in e) || e.editedAt is timestamp) &&
-        (!('isBillable' in e) || e.isBillable is bool) &&
-        employerEntryBillingPercentOk();
+          e.workspaceId.size() > 0 &&
+          e.workspaceId.size() <= 128 &&
+          e.start is timestamp &&
+          e.updatedAt is timestamp &&
+          e.isDeleted is bool &&
+          (!('end' in e) || e.end == null || (e.end is timestamp && e.end > e.start)) &&
+          (!('mode' in e) || (e.mode is string && e.mode.size() <= 64)) &&
+          (!('taskTitle' in e) || (e.taskTitle is string && e.taskTitle.size() <= 4000)) &&
+          (!('note' in e) || (e.note is string && e.note.size() <= 4000)) &&
+          (!('entryType' in e) || (e.entryType is string && e.entryType.size() <= 64)) &&
+          (!('createdVia' in e) || (e.createdVia is string && e.createdVia.size() <= 64)) &&
+          (!('createdBy' in e) || (e.createdBy is string && e.createdBy.size() <= 128)) &&
+          (!('editedBy' in e) || (e.editedBy is string && e.editedBy.size() <= 128)) &&
+          (!('editedAt' in e) || e.editedAt is timestamp) &&
+          (!('isBillable' in e) || e.isBillable is bool) &&
+          billingRatePercentOkEntry(e) &&
+          entryOptionalAuditFieldsOk(e);
     }
 
-    function employerEntryCreateValid() {
+    function employerEntryCreateValid(uid) {
       let e = request.resource.data;
       return employerEntryCoreFieldsValid() &&
-        e.createdBy == request.auth.uid &&
-        e.createdVia == 'employer_panel';
+          employerHasTrackedWorkspace(uid, e.workspaceId) &&
+          e.createdBy == request.auth.uid &&
+          e.createdVia == 'employer_panel';
     }
 
-    function employerEntryUpdateValid() {
+    function employerEntryUpdateValid(uid) {
+      let e = request.resource.data;
       return employerEntryCoreFieldsValid() &&
-        (!('editedBy' in request.resource.data) ||
-          request.resource.data.editedBy == request.auth.uid);
+          employerHasTrackedWorkspace(uid, e.workspaceId) &&
+          (!('editedBy' in e) || e.editedBy == request.auth.uid);
     }
 
-    /// Employee writes their own `users/{userId}/entries` (mobile). Same field shape as employer edits.
-    function employeeOwnTimeEntryWrite() {
-      return request.auth != null &&
-        request.auth.uid == userId &&
-        employerEntryCoreFieldsValid();
+    function hasValidWorkspaceShape(data) {
+      return data.keys().hasAll([
+            'name',
+            'createdAt',
+            'updatedAt',
+            'isArchived'
+          ]) &&
+          data.keys().hasOnly([
+            'name',
+            'createdAt',
+            'updatedAt',
+            'isArchived',
+            'companyName',
+            'companySlug',
+            'employeeWorkEmail',
+            'employeeWorkEmailDomain',
+            'colorHex',
+            'hourlyRate',
+            'currency',
+            'currencyCode',
+            'isSharedWithEmployer',
+            'linkedEmployerEmails',
+            'employeeFirstName',
+            'employeeLastName'
+          ]) &&
+          data.name is string &&
+          data.createdAt is timestamp &&
+          data.updatedAt is timestamp &&
+          data.isArchived is bool &&
+          optionalString(data, 'companyName') &&
+          optionalString(data, 'companySlug') &&
+          optionalString(data, 'employeeWorkEmail') &&
+          optionalString(data, 'employeeWorkEmailDomain') &&
+          optionalString(data, 'colorHex') &&
+          optionalNumber(data, 'hourlyRate') &&
+          optionalString(data, 'currency') &&
+          optionalString(data, 'currencyCode') &&
+          optionalBool(data, 'isSharedWithEmployer') &&
+          optionalEmployerEmailRefsListOk(data) &&
+          optionalString(data, 'employeeFirstName') &&
+          optionalString(data, 'employeeLastName');
     }
 
-    match /users/{userId} {
-      match /live/status {
-        allow read: if employerTracksUser(userId);
-        allow write: if false;
-      }
-      match /workspaces/{wid} {
-        allow read: if request.auth.uid == userId ||
-          employerHasTrackedWorkspace(userId, wid) ||
-          sharedWorkspaceEmployerListReadOk(userId);
-        allow write: if false;
-      }
-      match /entries/{eid} {
-        allow read: if request.auth != null &&
-          (request.auth.uid == userId ||
-            employerHasTrackedWorkspace(userId, resource.data.workspaceId));
-        allow create: if employeeOwnTimeEntryWrite() ||
-          (employerHasTrackedWorkspace(userId, request.resource.data.workspaceId) &&
-            employerEntryCreateValid());
-        allow update: if employeeOwnTimeEntryWrite() ||
-          (employerHasTrackedWorkspace(userId, request.resource.data.workspaceId) &&
-            employerEntryUpdateValid());
-        allow delete: if false;
-      }
-      match /{document=**} {
-        allow read: if false;
-        allow write: if false;
-      }
+    function hasValidWorkspaceBillingPatch() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'hourlyRate',
+            'currency',
+            'currencyCode',
+            'updatedAt'
+          ]) &&
+          request.resource.data.updatedAt is timestamp &&
+          (
+            !request.resource.data.keys().hasAny(['hourlyRate']) ||
+            request.resource.data.hourlyRate is number
+          ) &&
+          (
+            !request.resource.data.keys().hasAny(['currency']) ||
+            request.resource.data.currency in ['PLN', 'EUR', 'USD', 'GBP']
+          ) &&
+          (
+            !request.resource.data.keys().hasAny(['currencyCode']) ||
+            request.resource.data.currencyCode in ['PLN', 'EUR', 'USD', 'GBP']
+          );
     }
 
-    match /employeeWorkEmailIndex/{key} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null &&
-        request.resource.data.uid is string &&
-        request.resource.data.uid.size() > 0 &&
-        request.auth.uid == request.resource.data.uid;
-      allow delete: if request.auth != null &&
-        resource.data.uid == request.auth.uid;
+    function workspaceIsSharedForEmployer(uid, workspaceId) {
+      return exists(/databases/$(database)/documents/users/$(uid)/workspaces/$(workspaceId)) &&
+          get(/databases/$(database)/documents/users/$(uid)/workspaces/$(workspaceId)).data.isSharedWithEmployer == true;
     }
 
-    match /userEmailIndex/{email} {
-      allow read: if request.auth != null;
-      allow write: if false;
+    function hasValidTrackedWorkspaceShape(data, accessId) {
+      return data.keys().hasAll([
+            'employeeUid',
+            'workspaceId',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          data.keys().hasOnly([
+            'employeeUid',
+            'workspaceId',
+            'employeeEmailLower',
+            'employeeWorkEmailLower',
+            'employeeWorkEmailDomain',
+            'companyName',
+            'companySlug',
+            'workspaceName',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          data.employeeUid is string &&
+          data.workspaceId is string &&
+          accessId == trackedWorkspaceId(data.employeeUid, data.workspaceId) &&
+          data.createdAt is timestamp &&
+          data.updatedAt is timestamp &&
+          optionalString(data, 'employeeEmailLower') &&
+          optionalString(data, 'employeeWorkEmailLower') &&
+          optionalString(data, 'employeeWorkEmailDomain') &&
+          optionalString(data, 'companyName') &&
+          optionalString(data, 'companySlug') &&
+          optionalString(data, 'workspaceName') &&
+          employerTracksUser(data.employeeUid) &&
+          workspaceIsSharedForEmployer(data.employeeUid, data.workspaceId);
     }
 
-    match /employers/{employerId}/trackedWorkspaces/{accessId} {
-      allow read: if request.auth != null && request.auth.uid == employerId;
-      allow create, update: if request.auth != null && request.auth.uid == employerId &&
-        request.resource.data.employeeUid is string &&
-        request.resource.data.workspaceId is string &&
-        request.resource.data.employeeUid.size() > 0 &&
-        request.resource.data.workspaceId.size() > 0 &&
-        accessId == request.resource.data.employeeUid + '_' + request.resource.data.workspaceId &&
-        exists(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)) &&
-        (
-          !('isSharedWithEmployer' in get(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)).data) ||
-          get(/databases/$(database)/documents/users/$(request.resource.data.employeeUid)/workspaces/$(request.resource.data.workspaceId)).data.isSharedWithEmployer == true
-        );
-      allow delete: if request.auth != null && request.auth.uid == employerId;
+    function hasValidLiveStatusShape(data, uid) {
+      return data.keys().hasOnly([
+            'uid',
+            'isOnline',
+            'timerState',
+            'activeWorkspaceId',
+            'activeCompanySlug',
+            'activeWorkspaceName',
+            'sessionStartedAt',
+            'sessionPausedAt',
+            'accumulatedSecondsBeforePause',
+            'billingRatePercent',
+            'hourlyRate',
+            'currency',
+            'lastSeenAt',
+            'updatedAt'
+          ]) &&
+          data.keys().hasAll([
+            'uid',
+            'isOnline',
+            'timerState',
+            'lastSeenAt',
+            'updatedAt'
+          ]) &&
+          data.uid == uid &&
+          data.uid == request.auth.uid &&
+          data.isOnline is bool &&
+          data.timerState in ['idle', 'running', 'paused'] &&
+          data.lastSeenAt is timestamp &&
+          data.updatedAt is timestamp &&
+          optionalString(data, 'activeWorkspaceId') &&
+          optionalString(data, 'activeCompanySlug') &&
+          optionalString(data, 'activeWorkspaceName') &&
+          optionalTimestamp(data, 'sessionStartedAt') &&
+          optionalTimestamp(data, 'sessionPausedAt') &&
+          optionalNumber(data, 'accumulatedSecondsBeforePause') &&
+          billingRatePercentOk(data) &&
+          optionalNumber(data, 'hourlyRate') &&
+          optionalString(data, 'currency');
     }
 
-    match /employers/{employerId}/trackedEmployees/{tid} {
-      allow read, write: if request.auth != null && request.auth.uid == employerId;
+    function hasValidUserEmailIndexShape(data, emailLower) {
+      return data.keys().hasAll([
+            'uid',
+            'email',
+            'emailLower',
+            'updatedAt',
+            'firstName',
+            'lastName'
+          ]) &&
+          data.keys().hasOnly([
+            'uid',
+            'email',
+            'emailLower',
+            'updatedAt',
+            'firstName',
+            'lastName',
+            'displayName',
+            'providerIds'
+          ]) &&
+          data.uid is string &&
+          data.email is string &&
+          data.emailLower is string &&
+          data.firstName is string &&
+          data.lastName is string &&
+          data.updatedAt is timestamp &&
+          data.uid == request.auth.uid &&
+          data.emailLower == emailLower &&
+          data.email == request.auth.token.email &&
+          optionalString(data, 'displayName') &&
+          optionalList(data, 'providerIds');
     }
-    match /employers/{employerId}/trackedEmployeeUids/{employeeUid} {
-      allow read, write: if request.auth != null && request.auth.uid == employerId;
+
+    function hasValidEmployeeWorkEmailIndexShape(data, docId) {
+      return data.keys().hasOnly([
+            'uid',
+            'workEmailLower',
+            'domain',
+            'workspaceIds',
+            'updatedAt'
+          ]) &&
+          data.keys().hasAll([
+            'uid',
+            'workEmailLower',
+            'domain',
+            'workspaceIds',
+            'updatedAt'
+          ]) &&
+          data.uid is string &&
+          data.uid == request.auth.uid &&
+          data.uid.size() > 0 &&
+          data.uid.size() <= 128 &&
+          data.workEmailLower is string &&
+          data.workEmailLower == docId &&
+          data.workEmailLower.size() > 0 &&
+          data.workEmailLower.size() <= 254 &&
+          data.domain is string &&
+          data.domain.size() > 0 &&
+          data.domain.size() <= 253 &&
+          data.workspaceIds is list &&
+          data.workspaceIds.size() > 0 &&
+          data.workspaceIds.size() <= 64 &&
+          data.updatedAt is timestamp;
     }
-    match /employers/{employerId}/groups/{gid} {
-      allow read, write: if request.auth != null && request.auth.uid == employerId;
+
+    function hasValidUserProfileMainShape(data) {
+      return data.keys().hasAll([
+            'firstName',
+            'lastName',
+            'displayName',
+            'email',
+            'updatedAt'
+          ]) &&
+          data.keys().hasOnly([
+            'firstName',
+            'lastName',
+            'displayName',
+            'email',
+            'updatedAt'
+          ]) &&
+          data.firstName is string &&
+          data.lastName is string &&
+          data.displayName is string &&
+          data.email is string &&
+          data.updatedAt is timestamp &&
+          data.email == request.auth.token.email &&
+          (
+            data.firstName.size() > 0 ||
+            data.lastName.size() > 0
+          );
     }
-    match /employers/{employerId}/{document=**} {
+
+    function hasValidLegalConsentsShape(data) {
+      return data.keys().hasAll([
+            'termsAccepted',
+            'privacyAccepted',
+            'acceptedAt',
+            'termsVersion',
+            'privacyVersion'
+          ]) &&
+          data.keys().hasOnly([
+            'termsAccepted',
+            'privacyAccepted',
+            'acceptedAt',
+            'termsVersion',
+            'privacyVersion',
+            'updatedAt',
+            'acceptedPlatform'
+          ]) &&
+          data.termsAccepted == true &&
+          data.privacyAccepted == true &&
+          data.acceptedAt is timestamp &&
+          data.termsVersion is string &&
+          data.termsVersion.size() > 0 &&
+          data.termsVersion.size() <= 32 &&
+          data.privacyVersion is string &&
+          data.privacyVersion.size() > 0 &&
+          data.privacyVersion.size() <= 32 &&
+          (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+          (!('acceptedPlatform' in data) ||
+              (data.acceptedPlatform is string &&
+                  data.acceptedPlatform.size() > 0 &&
+                  data.acceptedPlatform.size() <= 64));
+    }
+
+    match /users/{uid}/profile/{docId} {
+      allow read: if isOwner(uid);
+
+      allow create, update: if isOwner(uid) &&
+          docId == 'main' &&
+          hasValidUserProfileMainShape(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    match /users/{uid}/legal/{docId} {
+      allow read: if isOwner(uid) && docId == 'consents';
+
+      allow create, update: if isOwner(uid) &&
+          docId == 'consents' &&
+          hasValidLegalConsentsShape(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    match /userEmailIndex/{emailLower} {
+      allow read: if isSignedIn();
+
+      allow create, update: if isSignedIn() &&
+          hasValidUserEmailIndexShape(request.resource.data, emailLower);
+
+      allow delete: if false;
+    }
+
+    match /employeeWorkEmailIndex/{workEmailLower} {
+      allow read: if isSignedIn();
+
+      allow create, update: if isSignedIn() &&
+          hasValidEmployeeWorkEmailIndexShape(request.resource.data, workEmailLower);
+
+      allow delete: if isSignedIn() &&
+          resource.data.uid == request.auth.uid;
+    }
+
+    match /users/{uid}/live/status {
+      allow read: if isOwner(uid) || employerTracksUser(uid);
+
+      allow create, update: if isOwner(uid) &&
+          hasValidLiveStatusShape(request.resource.data, uid);
+
+      allow delete: if false;
+    }
+
+    match /users/{uid}/entries/{entryId} {
+      allow read: if isOwner(uid) ||
+          (
+            isSignedIn() &&
+            resource.data.workspaceId is string &&
+            employerHasTrackedWorkspace(uid, resource.data.workspaceId)
+          );
+
+      allow create: if (isOwner(uid) && hasValidEntryShape(request.resource.data)) ||
+          (employerEntryCreateValid(uid));
+
+      allow update: if (isOwner(uid) && hasValidEntryShape(request.resource.data)) ||
+          (employerEntryUpdateValid(uid));
+
+      allow delete: if false;
+    }
+
+    match /users/{uid}/workspaces/{workspaceId} {
+      allow read: if isOwner(uid) ||
+          employerHasTrackedWorkspace(uid, workspaceId) ||
+          (
+            employerTracksUser(uid) &&
+            resource.data.isSharedWithEmployer == true
+          );
+
+      allow create, update: if isOwner(uid) &&
+          hasValidWorkspaceShape(request.resource.data);
+
+      allow update: if employerHasTrackedWorkspace(uid, workspaceId) &&
+          hasValidWorkspaceBillingPatch();
+
+      allow delete: if false;
+    }
+
+    match /employers/{employerUid}/trackedEmployees/{docId} {
+      allow read, write: if isOwner(employerUid);
+    }
+
+    match /employers/{employerUid}/trackedEmployeeUids/{employeeUid} {
+      allow read, write: if isOwner(employerUid);
+    }
+
+    match /employers/{employerUid}/trackedWorkspaces/{accessId} {
+      allow read: if isOwner(employerUid);
+
+      allow create, update: if isOwner(employerUid) &&
+          hasValidTrackedWorkspaceShape(request.resource.data, accessId);
+
+      allow delete: if isOwner(employerUid);
+    }
+
+    match /employers/{employerUid}/groups/{groupId} {
+      allow read, write: if isOwner(employerUid);
+    }
+
+    match /{document=**} {
       allow read, write: if false;
     }
   }
