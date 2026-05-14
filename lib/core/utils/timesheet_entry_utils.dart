@@ -34,6 +34,50 @@ List<WorkEntry> filterTimesheetEntries(
   }).toList();
 }
 
+/// Powód odrzucenia przez [filterTimesheetEntries], albo `null` gdy wpis przechodzi.
+String? explainTimesheetFilterReject(
+  WorkEntry e, {
+  required String? workspaceId,
+  required String? entryType,
+  required bool? billableOnly,
+  required bool showDeleted,
+  required String searchQuery,
+}) {
+  final q = searchQuery.trim().toLowerCase();
+  if (!showDeleted && e.isDeleted) {
+    return 'filterTimesheetEntries: isDeleted=true (showDeleted off)';
+  }
+  if (workspaceId != null &&
+      workspaceId.isNotEmpty &&
+      e.workspaceId != workspaceId) {
+    return 'filterTimesheetEntries: workspaceId mismatch '
+        '(filter=$workspaceId entry=${e.workspaceId})';
+  }
+  if (entryType != null && entryType.isNotEmpty && entryType != 'all') {
+    final t = e.entryType ?? 'work';
+    if (t != entryType) {
+      return 'filterTimesheetEntries: entryType mismatch '
+          '(filter=$entryType entry=$t)';
+    }
+  }
+  if (billableOnly != null) {
+    if (billableOnly && !e.effectiveBillable) {
+      return 'filterTimesheetEntries: billableOnly=true but entry not billable';
+    }
+    if (!billableOnly && e.effectiveBillable) {
+      return 'filterTimesheetEntries: billableOnly=false but entry billable';
+    }
+  }
+  if (q.isNotEmpty) {
+    final title = (e.taskTitle ?? '').toLowerCase();
+    final note = (e.note ?? '').toLowerCase();
+    if (!title.contains(q) && !note.contains(q)) {
+      return 'filterTimesheetEntries: searchQuery no match in title/note (q=$q)';
+    }
+  }
+  return null;
+}
+
 enum TimesheetSort { newestFirst, oldestFirst, durationDesc, amountDesc }
 
 /// [amountOf] must return comparable amount for `amountDesc` (e.g. from [EntryAmountResult.amountValue] or 0).

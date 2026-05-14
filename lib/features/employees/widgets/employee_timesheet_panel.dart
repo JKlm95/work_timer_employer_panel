@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/debug/employer_entries_debug_config.dart';
 import '../../../core/theme/app_layout.dart';
 import '../../../core/utils/employer_workspace_lookup.dart';
 import '../../../core/utils/entry_amount_breakdown.dart';
@@ -481,6 +482,77 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     );
     Workspace? workspaceFor(WorkEntry e) =>
         workspaceForEmployerEntry(wsLookup, widget.employeeUid, e.workspaceId);
+
+    if (EmployerEntriesDebugConfig.tracePipelineForEmployee(widget.employeeUid)) {
+      final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
+      debugPrint(
+        '[Timesheet/_buildBody TRACE] employer=${widget.employerUid} '
+        'employee=${widget.employeeUid} '
+        'monthStart=${_period.start.toIso8601String()} '
+        'monthEnd=${_period.endInclusive.toIso8601String()} '
+        'raw=${raw.length} filtered=${filtered.length} '
+        'workspaceFilter=${_workspaceFilter ?? '(none)'} entryType=$_entryTypeFilter '
+        'billable=$_billableFilter showDeleted=$_showDeleted '
+        'searchLen=${_searchCtrl.text.trim().length}',
+      );
+      if (fid != null && fid.isNotEmpty) {
+        WorkEntry? focus;
+        for (final e in raw) {
+          if (e.id == fid) {
+            focus = e;
+            break;
+          }
+        }
+        if (focus == null) {
+          debugPrint(
+            '[Timesheet/_buildBody TRACE] FOCUS entryId=$fid NOT in raw stream '
+            '(${raw.length} rows)',
+          );
+        } else {
+          debugPrint(
+            '[Timesheet/_buildBody TRACE] FOCUS raw ${_period.start.toIso8601String()} '
+            'id=${focus.id} workspaceId=${focus.workspaceId.trim()} '
+            'start=${focus.start.toIso8601String()} '
+            'end=${focus.end?.toIso8601String() ?? 'null'} '
+            'isDeleted=${focus.isDeleted}',
+          );
+          final reject = explainTimesheetFilterReject(
+            focus,
+            workspaceId: _workspaceFilter,
+            entryType: _entryTypeFilter,
+            billableOnly: billableVal,
+            showDeleted: _showDeleted,
+            searchQuery: _searchCtrl.text,
+          );
+          if (reject != null) {
+            debugPrint('[Timesheet/_buildBody TRACE] $reject');
+          } else {
+            debugPrint(
+              '[Timesheet/_buildBody TRACE] filterTimesheetEntries: PASS',
+            );
+          }
+          final inFiltered = filtered.any((e) => e.id == fid);
+          debugPrint(
+            '[Timesheet/_buildBody TRACE] FOCUS inFiltered=$inFiltered',
+          );
+          final ws = workspaceFor(focus);
+          debugPrint(
+            '[Timesheet/_buildBody TRACE] workspaceForEmployerEntry='
+            '${ws == null ? 'MISS' : 'HIT'} '
+            'lookupKey=${employerWorkspaceLookupKey(widget.employeeUid, focus.workspaceId)}',
+          );
+          final inForTotals = forTotals.any((e) => e.id == fid);
+          final dur = focus.duration;
+          debugPrint(
+            '[Timesheet/_buildBody TRACE] TimesheetMonthSummary.forTotals: '
+            'FOCUS inForTotals=$inForTotals durationNull=${dur == null} '
+            '(compute skips isDeleted or duration==null in aggregation loop; '
+            'brak osobnej funkcji countsInTimeAggregates — patrz '
+            'TimesheetMonthSummary.compute)',
+          );
+        }
+      }
+    }
 
     final summary = TimesheetMonthSummary.compute(
       forTotals,

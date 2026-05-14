@@ -4,6 +4,7 @@ import 'dart:math' show min;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/debug/employer_entries_debug_config.dart';
 import '../core/debug/live_status_debug_config.dart';
 import '../core/utils/employer_workspace_lookup.dart';
 import '../core/utils/employer_entry_soft_patch.dart';
@@ -123,6 +124,114 @@ class FirestoreService {
         'isDeleted=$deleted startBeforeMonth=$startBefore startAfterMonth=$startAfter '
         '(non-zero flags usually mean unexpected data vs query)',
       );
+    }
+  }
+
+  String _traceEmployerEntryLine(String employeeUid, WorkEntry e) =>
+      '${e.id}: workspaceId=${e.workspaceId.trim()} '
+      'lookupKey=${employerWorkspaceLookupKey(employeeUid, e.workspaceId)} '
+      'start=${e.start.toIso8601String()} end=${e.end?.toIso8601String() ?? 'null'} '
+      'isDeleted=${e.isDeleted}';
+
+  void _logEmployerEntriesFetchTrace({
+    required String employerUid,
+    required String employeeUid,
+    required ReportPeriod period,
+    required Set<String> allowed,
+    required int chunkCount,
+    required int totalFirestoreDocs,
+    required List<WorkEntry> merged,
+  }) {
+    if (!EmployerEntriesDebugConfig.tracePipelineForEmployee(employeeUid)) {
+      return;
+    }
+    final ids = allowed.toList()..sort();
+    debugPrint(
+      '[EmployerFS/fetchEntries TRACE] employer=$employerUid employee=$employeeUid '
+      'monthStart=${period.start.toIso8601String()} '
+      'monthEnd=${period.endInclusive.toIso8601String()} '
+      'trackedWorkspaceIds=$ids trackedWsCount=${allowed.length} '
+      'chunks=$chunkCount firestoreDocsTotal=$totalFirestoreDocs '
+      'mergedUnique=${merged.length}',
+    );
+    final n = min(12, merged.length);
+    for (var i = 0; i < n; i++) {
+      debugPrint(
+        '[EmployerFS/fetchEntries TRACE] preview[$i] '
+        '${_traceEmployerEntryLine(employeeUid, merged[i])}',
+      );
+    }
+    final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
+    if (fid != null && fid.isNotEmpty) {
+      WorkEntry? hit;
+      for (final e in merged) {
+        if (e.id == fid) {
+          hit = e;
+          break;
+        }
+      }
+      if (hit == null) {
+        debugPrint(
+          '[EmployerFS/fetchEntries TRACE] FOCUS entryId=$fid NOT in merged '
+          '(query: start in [monthStart, monthEnd] AND workspaceId in trackedWorkspaceIds)',
+        );
+      } else {
+        debugPrint(
+          '[EmployerFS/fetchEntries TRACE] FOCUS entryId=$fid IN_RESULT '
+          '${_traceEmployerEntryLine(employeeUid, hit)}',
+        );
+      }
+    }
+  }
+
+  void _logEmployerEntriesStreamEmitTrace({
+    required String employerUid,
+    required String employeeUid,
+    required ReportPeriod period,
+    required Set<String> captured,
+    required List<List<WorkEntry>> lists,
+    required List<WorkEntry> merged,
+  }) {
+    if (!EmployerEntriesDebugConfig.tracePipelineForEmployee(employeeUid)) {
+      return;
+    }
+    final ids = captured.toList()..sort();
+    final chunkCounts = lists.map((l) => l.length).toList();
+    final perChunkSum = chunkCounts.fold<int>(0, (a, b) => a + b);
+    debugPrint(
+      '[EmployerFS/entriesMonthStream TRACE] employer=$employerUid employee=$employeeUid '
+      'monthStart=${period.start.toIso8601String()} '
+      'monthEnd=${period.endInclusive.toIso8601String()} '
+      'trackedWorkspaceIds=$ids trackedWsCount=${captured.length} '
+      'merged=${merged.length} perChunkEntryCounts=$chunkCounts '
+      'perChunkSum=$perChunkSum',
+    );
+    final n = min(12, merged.length);
+    for (var i = 0; i < n; i++) {
+      debugPrint(
+        '[EmployerFS/entriesMonthStream TRACE] preview[$i] '
+        '${_traceEmployerEntryLine(employeeUid, merged[i])}',
+      );
+    }
+    final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
+    if (fid != null && fid.isNotEmpty) {
+      WorkEntry? hit;
+      for (final e in merged) {
+        if (e.id == fid) {
+          hit = e;
+          break;
+        }
+      }
+      if (hit == null) {
+        debugPrint(
+          '[EmployerFS/entriesMonthStream TRACE] FOCUS entryId=$fid NOT in merged',
+        );
+      } else {
+        debugPrint(
+          '[EmployerFS/entriesMonthStream TRACE] FOCUS entryId=$fid IN_RESULT '
+          '${_traceEmployerEntryLine(employeeUid, hit)}',
+        );
+      }
     }
   }
 
@@ -674,6 +783,7 @@ class FirestoreService {
     );
     final merged = <WorkEntry>[];
     final seen = <String>{};
+    var totalFirestoreDocs = 0;
     for (var ci = 0; ci < chunks.length; ci++) {
       final chunk = chunks[ci];
       if (chunk.isEmpty) continue;
@@ -683,6 +793,7 @@ class FirestoreService {
             .where('start', isGreaterThanOrEqualTo: startTs)
             .where('start', isLessThanOrEqualTo: endTs)
             .get(opts);
+        totalFirestoreDocs += snap.docs.length;
         if (kDebugMode) {
           debugPrint(
             '[EmployerFS/fetchEntries] chunk ${ci + 1}/${chunks.length} '
@@ -692,6 +803,13 @@ class FirestoreService {
         for (final d in snap.docs) {
           if (seen.add(d.id)) {
             merged.add(WorkEntry.fromDoc(d.id, d.data()));
+          } else if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+            employeeUid,
+          )) {
+            debugPrint(
+              '[EmployerFS/fetchEntries TRACE] WARN duplicate entry id across '
+              'chunks id=${d.id}',
+            );
           }
         }
       } catch (e, st) {
@@ -750,6 +868,15 @@ class FirestoreService {
         );
       }
     }
+    _logEmployerEntriesFetchTrace(
+      employerUid: employerUid,
+      employeeUid: employeeUid,
+      period: period,
+      allowed: allowed,
+      chunkCount: chunks.length,
+      totalFirestoreDocs: totalFirestoreDocs,
+      merged: merged,
+    );
     return merged;
   }
 
@@ -940,7 +1067,16 @@ class FirestoreService {
         void emit() {
           final merged = <WorkEntry>[for (final l in lists) ...l]
             ..sort((a, b) => a.start.compareTo(b.start));
-          if (kDebugMode) {
+          if (EmployerEntriesDebugConfig.tracePipelineForEmployee(employeeUid)) {
+            _logEmployerEntriesStreamEmitTrace(
+              employerUid: employerUid,
+              employeeUid: employeeUid,
+              period: period,
+              captured: captured,
+              lists: lists,
+              merged: merged,
+            );
+          } else if (kDebugMode) {
             if (merged.length != lastLoggedEmitCount) {
               lastLoggedEmitCount = merged.length;
               debugPrint(
@@ -972,6 +1108,14 @@ class FirestoreService {
               .snapshots()
               .listen(
                 (snap) {
+                  if (EmployerEntriesDebugConfig.tracePipelineForEmployee(
+                    employeeUid,
+                  )) {
+                    debugPrint(
+                      '[EmployerFS/entriesMonthStream TRACE] chunk=$idx/${chunks.length} '
+                      'snap.docs=${snap.docs.length} docChanges=${snap.docChanges.length}',
+                    );
+                  }
                   lists[idx] = snap.docs
                       .map((d) => WorkEntry.fromDoc(d.id, d.data()))
                       .toList();

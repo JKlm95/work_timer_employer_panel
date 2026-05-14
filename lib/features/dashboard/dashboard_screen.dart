@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/debug/employer_entries_debug_config.dart';
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/employer_workspace_lookup.dart';
@@ -18,6 +19,7 @@ import '../../core/widgets/employee_presence_badge.dart';
 import '../../models/employee_live_status.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
+import '../../models/work_entry.dart';
 import '../../models/workspace.dart';
 import '../../services/firestore_service.dart';
 import '../../services/report_calculation_service.dart';
@@ -357,6 +359,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
           period,
           preferServer: preferServer,
         );
+        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(t.employeeUid)) {
+          final trackedIds = await widget.firestore.trackedWorkspaceIdsForEmployee(
+            employerUid,
+            t.employeeUid,
+          );
+          final sortedTracked = trackedIds.toList()..sort();
+          debugPrint(
+            '[Dashboard/_loadDashboardSnapshot TRACE] employee=${t.employeeUid} '
+            'monthStart=${period.start.toIso8601String()} '
+            'monthEnd=${period.endInclusive.toIso8601String()} '
+            'trackedWorkspaceIds=$sortedTracked '
+            'entriesFromFetch=${entries.length}',
+          );
+          final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
+          if (fid != null &&
+              fid.isNotEmpty &&
+              !entries.any((e) => e.id == fid)) {
+            debugPrint(
+              '[Dashboard/_loadDashboardSnapshot TRACE] FOCUS entryId=$fid '
+              'NOT in entriesFromFetch',
+            );
+          }
+        }
         final workspaces = await widget.firestore
             .fetchEmployeeWorkspacesForEmployer(
               employerUid,
@@ -376,6 +401,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
           return true;
         }).toList();
+        if (EmployerEntriesDebugConfig.tracePipelineForEmployee(t.employeeUid)) {
+          debugPrint(
+            '[Dashboard/_loadDashboardSnapshot TRACE] employee=${t.employeeUid} '
+            'afterStatsFilter retained=${filtered.length} '
+            '(drops: isDeleted OR end==null OR workspaceForEmployerEntry==null)',
+          );
+          final fid = EmployerEntriesDebugConfig.focusEntryId?.trim();
+          if (fid != null && fid.isNotEmpty) {
+            WorkEntry? hit;
+            for (final e in entries) {
+              if (e.id == fid) {
+                hit = e;
+                break;
+              }
+            }
+            if (hit != null) {
+              final ws = workspaceForEmployerEntry(
+                wsMap,
+                t.employeeUid,
+                hit.workspaceId,
+              );
+              final pass = !hit.isDeleted &&
+                  hit.end != null &&
+                  ws != null;
+              debugPrint(
+                '[Dashboard/_loadDashboardSnapshot TRACE] FOCUS entryId=$fid '
+                'statsRowIncluded=$pass '
+                'deleted=${hit.isDeleted} endNull=${hit.end == null} '
+                'workspaceLookup=${ws == null ? 'MISS' : 'HIT'} '
+                'workspaceId=${hit.workspaceId.trim()} '
+                'lookupKey=${employerWorkspaceLookupKey(t.employeeUid, hit.workspaceId)} '
+                'start=${hit.start.toIso8601String()} '
+                'end=${hit.end?.toIso8601String() ?? 'null'}',
+              );
+            }
+          }
+        }
         totalHours += _calc.hoursForEntries(filtered);
         final money = _calc.estimatedAmountByCurrency(
           entries: filtered.where((e) => e.isWorkEntry).toList(),
