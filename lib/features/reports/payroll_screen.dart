@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/utils/employee_name_utils.dart';
+import '../../core/utils/employer_workspace_lookup.dart';
 import '../../core/utils/report_period.dart';
 import '../../models/employer_group.dart';
 import '../../models/tracked_employee.dart';
@@ -534,11 +535,15 @@ class _PayrollScreenState extends State<PayrollScreen> {
       );
       final workspaces = await widget.firestore
           .fetchEmployeeWorkspacesForEmployer(employerUid, t.employeeUid);
-      final wsMap = {for (final w in workspaces) w.id: w};
+      final wsMap = buildWorkspaceLookupByScopedKey(t.employeeUid, workspaces);
 
       final scoped = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
-        final ws = wsMap[e.workspaceId];
+        final ws = workspaceForEmployerEntry(
+          wsMap,
+          t.employeeUid,
+          e.workspaceId,
+        );
         if (ws == null) return false;
         return true;
       }).toList();
@@ -555,7 +560,8 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
       final money = _calc.estimatedAmountByCurrency(
         entries: active.where((e) => e.isWorkEntry).toList(),
-        workspaceById: wsMap,
+        workspaceByLookupKey: wsMap,
+        employeeUid: t.employeeUid,
       );
       money.forEach((k, v) => grandTotals[k] = (grandTotals[k] ?? 0) + v);
 

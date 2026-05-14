@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
+import '../../core/utils/employer_workspace_lookup.dart';
 import '../../core/utils/live_running_amounts.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/app_empty_state.dart';
@@ -362,21 +363,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
               t.employeeUid,
               preferServer: preferServer,
             );
-        final wsMap = {for (final w in workspaces) w.id: w};
+        final wsMap = buildWorkspaceLookupByScopedKey(
+          t.employeeUid,
+          workspaces,
+        );
         workspaceMapsByEmployeeUid[t.employeeUid] = wsMap;
         final filtered = entries.where((e) {
           if (e.isDeleted || e.end == null) return false;
-          if (wsMap[e.workspaceId] == null) return false;
+          if (workspaceForEmployerEntry(wsMap, t.employeeUid, e.workspaceId) ==
+              null) {
+            return false;
+          }
           return true;
         }).toList();
         totalHours += _calc.hoursForEntries(filtered);
         final money = _calc.estimatedAmountByCurrency(
           entries: filtered.where((e) => e.isWorkEntry).toList(),
-          workspaceById: wsMap,
+          workspaceByLookupKey: wsMap,
+          employeeUid: t.employeeUid,
         );
         money.forEach(
           (k, v) => amountByCurrency[k] = (amountByCurrency[k] ?? 0) + v,
         );
+        if (kDebugMode && entries.isNotEmpty && filtered.isEmpty) {
+          final sample = entries
+              .take(6)
+              .map(
+                (e) =>
+                    '${e.id}:ws=${e.workspaceId.trim()}|composite=${employerWorkspaceLookupKey(t.employeeUid, e.workspaceId)}',
+              )
+              .join('; ');
+          debugPrint(
+            '[Dashboard/stats] skip all ${entries.length} entries for '
+            'employee=${t.employeeUid} (workspace doc lookup vs entry.workspaceId). '
+            'lookupKeysSample=${wsMap.keys.take(6).join('| ')} · entriesSample=$sample',
+          );
+        }
       }
 
       _logStatsRefreshDebug(reason, tracked, amountByCurrency);
@@ -663,7 +685,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               .workspaceMapsByEmployeeUid[t
                                                   .employeeUid
                                                   .trim()]
-                                              ?.keys
+                                              ?.values
+                                              .map((w) => w.id.trim())
+                                              .where((id) => id.isNotEmpty)
                                               .toSet() ??
                                           {},
                                 };

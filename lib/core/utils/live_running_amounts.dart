@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../debug/live_status_debug_config.dart';
+import 'employer_workspace_lookup.dart';
 import '../../models/employee_live_status.dart';
 import '../../models/tracked_employee.dart';
 import '../../models/workspace.dart';
@@ -31,13 +32,18 @@ class LiveRunningMoneySummary {
   }
 }
 
-double? _pickHourlyRate(EmployeeLiveStatus live, Map<String, Workspace> wsMap) {
+double? _pickHourlyRate(
+  EmployeeLiveStatus live,
+  Map<String, Workspace> wsMap,
+  String employeeUid,
+) {
+  final uid = employeeUid.trim();
   final direct = live.hourlyRate;
   if (direct != null && direct > 0) return direct;
 
   final id = live.activeWorkspaceId?.trim();
   if (id != null && id.isNotEmpty) {
-    final r = wsMap[id]?.hourlyRate;
+    final r = wsMap[employerWorkspaceLookupKey(uid, id)]?.hourlyRate;
     if (r != null && r > 0) return r;
   }
 
@@ -58,13 +64,18 @@ double? _pickHourlyRate(EmployeeLiveStatus live, Map<String, Workspace> wsMap) {
   return null;
 }
 
-String _pickCurrency(EmployeeLiveStatus live, Map<String, Workspace> wsMap) {
+String _pickCurrency(
+  EmployeeLiveStatus live,
+  Map<String, Workspace> wsMap,
+  String employeeUid,
+) {
+  final uid = employeeUid.trim();
   final c = live.currency?.trim();
   if (c != null && c.isNotEmpty) return c.toUpperCase();
 
   final id = live.activeWorkspaceId?.trim();
   if (id != null && id.isNotEmpty) {
-    final w = wsMap[id];
+    final w = wsMap[employerWorkspaceLookupKey(uid, id)];
     final wc = w?.currency?.trim();
     if (wc != null && wc.isNotEmpty) return wc.toUpperCase();
   }
@@ -121,7 +132,7 @@ LiveRunningMoneySummary computeLiveRunningMoneySummary({
 
     final wsMap =
         workspaceMapsByEmployeeUid[uid] ?? const <String, Workspace>{};
-    final rate = _pickHourlyRate(live, wsMap);
+    final rate = _pickHourlyRate(live, wsMap, uid);
     final secs = live.currentAccumulatedSeconds(at);
 
     if (rate == null || rate <= 0) {
@@ -136,7 +147,7 @@ LiveRunningMoneySummary computeLiveRunningMoneySummary({
       continue;
     }
 
-    final currency = _pickCurrency(live, wsMap);
+    final currency = _pickCurrency(live, wsMap, uid);
     final amount = hours * rate * pct / 100.0;
     out[currency] = (out[currency] ?? 0) + amount;
   }

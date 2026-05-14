@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/utils/employer_workspace_lookup.dart';
 import '../../core/utils/report_period.dart';
 import '../../models/tracked_employee.dart';
 import '../../models/work_entry.dart';
@@ -137,6 +138,9 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
 
             final workspace = selectedWs;
             final period = _period();
+            final wsLookup = buildWorkspaceLookupByScopedKey(te.employeeUid, [
+              workspace,
+            ]);
 
             return FutureBuilder<List<WorkEntry>>(
               future: widget.firestore.fetchEntriesInRangeForEmployer(
@@ -168,7 +172,8 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                 );
                 final money = _calc.estimatedAmountByCurrency(
                   entries: visible.where((e) => e.isWorkEntry).toList(),
-                  workspaceById: {workspace.id: workspace},
+                  workspaceByLookupKey: wsLookup,
+                  employeeUid: te.employeeUid,
                 );
 
                 final totalHours = _calc.hoursForEntries(visible);
@@ -199,7 +204,8 @@ class _ProjectReportScreenState extends State<ProjectReportScreen> {
                           _export.downloadProjectReportCsv(
                             filename: fname,
                             entries: visible,
-                            workspaceById: {workspace.id: workspace},
+                            employeeUid: te.employeeUid,
+                            workspaceByLookupKey: wsLookup,
                             billableOnly: _billableOnly,
                           );
                         },

@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
 import '../../core/utils/employer_group_ids_utils.dart';
+import '../../core/utils/employer_workspace_lookup.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/app_empty_state.dart';
 import '../../core/widgets/app_pulse_loading.dart';
@@ -682,16 +683,20 @@ class _EmployeesTableState extends State<_EmployeesTable> {
         employerUid,
         t.employeeUid,
       );
-      final wsMap = {for (final w in workspaces) w.id: w};
+      final wsMap = buildWorkspaceLookupByScopedKey(t.employeeUid, workspaces);
       final filtered = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
-        if (wsMap[e.workspaceId] == null) return false;
+        if (workspaceForEmployerEntry(wsMap, t.employeeUid, e.workspaceId) ==
+            null) {
+          return false;
+        }
         return true;
       }).toList();
       final hours = _calc.hoursForEntries(filtered);
       final money = _calc.estimatedAmountByCurrency(
         entries: filtered.where((e) => e.isWorkEntry).toList(),
-        workspaceById: wsMap,
+        workspaceByLookupKey: wsMap,
+        employeeUid: t.employeeUid,
       );
       out[t.id] = _EmpMonth(hours: hours, amountByCurrency: money);
     }

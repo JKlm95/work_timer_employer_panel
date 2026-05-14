@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/debug/live_status_debug_config.dart';
+import '../core/utils/employer_workspace_lookup.dart';
 import '../core/utils/employer_entry_soft_patch.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/employee_presence_utils.dart';
@@ -434,6 +435,15 @@ class FirestoreService {
       }
     }
     out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    if (kDebugMode && out.isNotEmpty) {
+      final keys = out
+          .map((w) => employerWorkspaceLookupKey(uid, w.id))
+          .join('|');
+      debugPrint(
+        '[EmployerFS/workspaces] employer=$employerUid employee=$uid '
+        'count=${out.length} lookupKeys=$keys',
+      );
+    }
     return out;
   }
 
@@ -698,6 +708,29 @@ class FirestoreService {
       }
     }
     merged.sort((a, b) => a.start.compareTo(b.start));
+    if (kDebugMode && merged.isNotEmpty) {
+      final distinctWs = merged.map((e) => e.workspaceId.trim()).toSet();
+      final outside = distinctWs.where((id) => !allowed.contains(id)).toList();
+      if (outside.isNotEmpty) {
+        debugPrint(
+          '[EmployerFS/fetchEntries] WARN employee=$employeeUid '
+          'entry workspaceIds outside allowed set: $outside '
+          '(allowed=$allowed)',
+        );
+      }
+      final preview = merged
+          .take(5)
+          .map(
+            (e) =>
+                '${e.id}:ws=${e.workspaceId.trim()}|${employerWorkspaceLookupKey(employeeUid, e.workspaceId)}',
+          )
+          .join('; ');
+      debugPrint(
+        '[EmployerFS/fetchEntries] employer=$employerUid employee=$employeeUid '
+        'merged=${merged.length} distinctWsInResults=${distinctWs.length} '
+        'allowedCount=${allowed.length} preview=$preview',
+      );
+    }
     if (kDebugMode) {
       _logEmployerEntriesPostQueryDebug(
         op: 'fetchEntries',

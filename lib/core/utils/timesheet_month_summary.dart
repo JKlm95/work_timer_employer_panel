@@ -1,3 +1,4 @@
+import 'employer_workspace_lookup.dart';
 import 'entry_amount_breakdown.dart';
 import '../../models/work_entry.dart';
 import '../../models/workspace.dart';
@@ -26,7 +27,8 @@ class TimesheetMonthSummary {
 
   static TimesheetMonthSummary compute(
     List<WorkEntry> entries,
-    Map<String, Workspace> workspaceById,
+    Map<String, Workspace> workspaceByLookupKey,
+    String employeeUid,
   ) {
     var total = Duration.zero;
     var billWork = Duration.zero;
@@ -57,7 +59,11 @@ class TimesheetMonthSummary {
         }
       }
 
-      final ws = workspaceById[e.workspaceId];
+      final ws = workspaceForEmployerEntry(
+        workspaceByLookupKey,
+        employeeUid,
+        e.workspaceId,
+      );
       final ar = EntryAmountResult.compute(e, ws);
       if (ar.amountValue != null && ar.currency.isNotEmpty) {
         money[ar.currency] = (money[ar.currency] ?? 0) + ar.amountValue!;

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:work_timer_employer_panel/core/utils/employer_workspace_lookup.dart';
 import 'package:work_timer_employer_panel/core/utils/live_running_amounts.dart';
 import 'package:work_timer_employer_panel/models/employee_live_status.dart';
 import 'package:work_timer_employer_panel/models/tracked_employee.dart';
@@ -35,7 +36,7 @@ void main() {
         liveByEmployeeUid: {uid: live},
         workspaceMapsByEmployeeUid: {
           uid: {
-            'w1': const Workspace(
+            employerWorkspaceLookupKey(uid, 'w1'): const Workspace(
               id: 'w1',
               name: 'P',
               companySlug: 'co',
@@ -63,7 +64,7 @@ void main() {
         liveByEmployeeUid: {uid: live},
         workspaceMapsByEmployeeUid: {
           uid: {
-            'w1': const Workspace(
+            employerWorkspaceLookupKey(uid, 'w1'): const Workspace(
               id: 'w1',
               name: 'P',
               companySlug: 'co',
@@ -86,7 +87,7 @@ void main() {
         liveByEmployeeUid: {uid: live},
         workspaceMapsByEmployeeUid: {
           uid: {
-            'w1': const Workspace(
+            employerWorkspaceLookupKey(uid, 'w1'): const Workspace(
               id: 'w1',
               name: 'P',
               companySlug: 'co',
@@ -118,7 +119,7 @@ void main() {
         liveByEmployeeUid: {uid: live},
         workspaceMapsByEmployeeUid: {
           uid: {
-            'shared': const Workspace(
+            employerWorkspaceLookupKey(uid, 'shared'): const Workspace(
               id: 'shared',
               name: 'Shared',
               companySlug: 'co',

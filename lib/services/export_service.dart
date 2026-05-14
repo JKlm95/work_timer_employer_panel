@@ -1,3 +1,4 @@
+import '../core/utils/employer_workspace_lookup.dart';
 import '../core/export/download.dart';
 import '../models/work_entry.dart';
 import '../models/workspace.dart';
@@ -7,7 +8,8 @@ class ExportService {
   void downloadProjectReportCsv({
     required String filename,
     required List<WorkEntry> entries,
-    required Map<String, Workspace> workspaceById,
+    required String employeeUid,
+    required Map<String, Workspace> workspaceByLookupKey,
     required bool billableOnly,
   }) {
     final rows = <List<String>>[];
@@ -25,7 +27,11 @@ class ExportService {
       'Currency',
     ]);
     for (final e in entries) {
-      final ws = workspaceById[e.workspaceId];
+      final ws = workspaceForEmployerEntry(
+        workspaceByLookupKey,
+        employeeUid,
+        e.workspaceId,
+      );
       final hours = e.duration?.inMinutes ?? 0;
       final h = hours / 60.0;
       String amount = '';

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../core/utils/employer_workspace_lookup.dart';
 import '../core/utils/report_period.dart';
 import '../models/work_entry.dart';
 import '../models/workspace.dart';
@@ -52,15 +53,23 @@ class ReportCalculationService {
   }
 
   /// Billing only for `work` (or null entryType). Missing rate => 0 amount (caller shows "—").
+  ///
+  /// [workspaceByLookupKey] must use keys from [employerWorkspaceLookupKey] for this
+  /// [employeeUid] (same composite as `trackedWorkspaces` doc ids).
   Map<String, double> estimatedAmountByCurrency({
     required List<WorkEntry> entries,
-    required Map<String, Workspace> workspaceById,
+    required Map<String, Workspace> workspaceByLookupKey,
+    required String employeeUid,
   }) {
     final map = <String, double>{};
     for (final e in entries) {
       if (!e.isWorkEntry) continue;
       if (!e.effectiveBillable) continue;
-      final ws = workspaceById[e.workspaceId];
+      final ws = workspaceForEmployerEntry(
+        workspaceByLookupKey,
+        employeeUid,
+        e.workspaceId,
+      );
       final rate = ws?.hourlyRate;
       if (rate == null || rate <= 0) continue;
       final d = e.duration;

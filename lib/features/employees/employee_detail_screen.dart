@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
+import '../../core/utils/employer_workspace_lookup.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/app_pulse_loading.dart';
 import '../../core/widgets/app_pinned_toolbar.dart';
@@ -600,15 +601,17 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     );
     final workspaces = await widget.firestore
         .fetchEmployeeWorkspacesForEmployer(employerUid, tr.employeeUid);
-    final wsMap = {for (final w in workspaces) w.id: w};
+    final wsMap = buildWorkspaceLookupByScopedKey(tr.employeeUid, workspaces);
     final filtered = entries.where((e) {
       if (e.isDeleted || e.end == null) return false;
-      return wsMap[e.workspaceId] != null;
+      return workspaceForEmployerEntry(wsMap, tr.employeeUid, e.workspaceId) !=
+          null;
     }).toList();
     final hours = calc.hoursForEntries(filtered);
     final money = calc.estimatedAmountByCurrency(
       entries: filtered.where((e) => e.isWorkEntry).toList(),
-      workspaceById: wsMap,
+      workspaceByLookupKey: wsMap,
+      employeeUid: tr.employeeUid,
     );
     final moneyText = money.isEmpty
         ? '—'
@@ -721,7 +724,11 @@ class _ProjectCard extends StatelessWidget {
         final nonBillH = split.nonBillableWorkHours;
         final money = calc.estimatedAmountByCurrency(
           entries: closed.where((e) => e.isWorkEntry).toList(),
-          workspaceById: {workspace.id: workspace},
+          workspaceByLookupKey: buildWorkspaceLookupByScopedKey(
+            tracked.employeeUid,
+            [workspace],
+          ),
+          employeeUid: tracked.employeeUid,
         );
 
         return Card(

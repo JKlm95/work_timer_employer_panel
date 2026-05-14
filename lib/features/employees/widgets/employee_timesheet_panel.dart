@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_layout.dart';
+import '../../../core/utils/employer_workspace_lookup.dart';
 import '../../../core/utils/entry_amount_breakdown.dart';
 import '../../../core/utils/report_period.dart';
 import '../../../core/utils/timesheet_entry_utils.dart';
@@ -47,10 +48,6 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
   List<WorkEntry>? _lastGoodEntries;
 
   ReportPeriod get _period => monthContaining(_month);
-
-  Map<String, Workspace> get _wsMap => {
-    for (final w in widget.workspaces) w.id: w,
-  };
 
   @override
   void dispose() {
@@ -478,13 +475,24 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     final forTotals = filtered
         .where((e) => !e.isDeleted && e.end != null)
         .toList();
-    final summary = TimesheetMonthSummary.compute(forTotals, _wsMap);
+    final wsLookup = buildWorkspaceLookupByScopedKey(
+      widget.employeeUid,
+      widget.workspaces,
+    );
+    Workspace? workspaceFor(WorkEntry e) =>
+        workspaceForEmployerEntry(wsLookup, widget.employeeUid, e.workspaceId);
+
+    final summary = TimesheetMonthSummary.compute(
+      forTotals,
+      wsLookup,
+      widget.employeeUid,
+    );
 
     final sorted = sortTimesheetEntries(
       filtered,
       _sort,
       amountOf: (e) =>
-          EntryAmountResult.compute(e, _wsMap[e.workspaceId]).amountValue ?? 0,
+          EntryAmountResult.compute(e, workspaceFor(e)).amountValue ?? 0,
     );
 
     if (kDebugMode && raw.isNotEmpty && filtered.isEmpty && !loading) {
@@ -522,9 +530,9 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
         LayoutBuilder(
           builder: (context, c) {
             if (c.maxWidth < 900) {
-              return _entryCards(context, sorted);
+              return _entryCards(context, sorted, wsLookup);
             }
-            return _entryTable(context, sorted);
+            return _entryTable(context, sorted, wsLookup);
           },
         ),
       ],
@@ -596,7 +604,11 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     );
   }
 
-  Widget _entryTable(BuildContext context, List<WorkEntry> rows) {
+  Widget _entryTable(
+    BuildContext context,
+    List<WorkEntry> rows,
+    Map<String, Workspace> wsLookup,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     final df = DateFormat.yMMMd();
     final tf = DateFormat.Hm();
@@ -628,7 +640,7 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
           ],
           rows: [
             for (var i = 0; i < rows.length; i++)
-              _dataRowForEntry(context, rows[i], i, df, tf, mono),
+              _dataRowForEntry(context, rows[i], i, df, tf, mono, wsLookup),
           ],
         ),
       ),
@@ -642,9 +654,16 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     DateFormat df,
     DateFormat tf,
     TextStyle? mono,
+    Map<String, Workspace> wsLookup,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    final wsName = _wsMap[e.workspaceId]?.name ?? e.workspaceId;
+    final wsName =
+        workspaceForEmployerEntry(
+          wsLookup,
+          widget.employeeUid,
+          e.workspaceId,
+        )?.name ??
+        e.workspaceId;
     final task = e.taskTitle ?? '';
     final note = e.note ?? '';
     return DataRow(
@@ -696,14 +715,18 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
             ),
           ),
         ),
-        DataCell(_amountCell(context, e)),
+        DataCell(_amountCell(context, e, wsLookup)),
         DataCell(Text(_statusLabel(e))),
         DataCell(_actions(context, e)),
       ],
     );
   }
 
-  Widget _entryCards(BuildContext context, List<WorkEntry> rows) {
+  Widget _entryCards(
+    BuildContext context,
+    List<WorkEntry> rows,
+    Map<String, Workspace> wsLookup,
+  ) {
     final df = DateFormat.yMMMd();
     final tf = DateFormat.Hm();
     return ListView.separated(
@@ -713,7 +736,14 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, i) {
         final e = rows[i];
-        final ar = EntryAmountResult.compute(e, _wsMap[e.workspaceId]);
+        final ar = EntryAmountResult.compute(
+          e,
+          workspaceForEmployerEntry(
+            wsLookup,
+            widget.employeeUid,
+            e.workspaceId,
+          ),
+        );
         return Card(
           clipBehavior: Clip.antiAlias,
           margin: EdgeInsets.zero,
@@ -743,7 +773,12 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _wsMap[e.workspaceId]?.name ?? e.workspaceId,
+                  workspaceForEmployerEntry(
+                        wsLookup,
+                        widget.employeeUid,
+                        e.workspaceId,
+                      )?.name ??
+                      e.workspaceId,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(
@@ -792,8 +827,15 @@ class _EmployeeTimesheetPanelState extends State<EmployeeTimesheetPanel> {
     return '${h.toStringAsFixed(1)} h';
   }
 
-  Widget _amountCell(BuildContext context, WorkEntry e) {
-    final ar = EntryAmountResult.compute(e, _wsMap[e.workspaceId]);
+  Widget _amountCell(
+    BuildContext context,
+    WorkEntry e,
+    Map<String, Workspace> wsLookup,
+  ) {
+    final ar = EntryAmountResult.compute(
+      e,
+      workspaceForEmployerEntry(wsLookup, widget.employeeUid, e.workspaceId),
+    );
     final t = Theme.of(context);
     return Tooltip(
       message: ar.formulaLine.isEmpty
