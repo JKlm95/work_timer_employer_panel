@@ -5,12 +5,13 @@ import '../../../core/utils/employer_group_ids_utils.dart';
 import '../../../models/employer_group.dart';
 import '../../../services/firestore_service.dart';
 
-Future<void> showCreateGroupDialog(
+Future<void> showRenameGroupDialog(
   BuildContext context,
   FirestoreService firestore, {
+  required EmployerGroup group,
   List<EmployerGroup> existingGroups = const [],
 }) async {
-  final nameCtrl = TextEditingController();
+  final nameCtrl = TextEditingController(text: group.name);
   var loading = false;
   String? error;
 
@@ -34,7 +35,11 @@ Future<void> showCreateGroupDialog(
               );
               return;
             }
-            if (employerGroupNameCollides(name, existingGroups)) {
+            if (employerGroupNameCollides(
+              name,
+              existingGroups,
+              ignoreGroupId: group.id,
+            )) {
               setLocal(() => error = 'A group with this name already exists.');
               return;
             }
@@ -43,22 +48,22 @@ Future<void> showCreateGroupDialog(
               error = null;
             });
             try {
-              await firestore.createGroup(uid, name: name);
+              await firestore.updateGroupName(uid, group.id, name: name);
               if (!ctx.mounted) return;
               ScaffoldMessenger.of(
                 ctx,
-              ).showSnackBar(const SnackBar(content: Text('Group created.')));
+              ).showSnackBar(const SnackBar(content: Text('Group renamed.')));
               Navigator.of(ctx).pop();
             } catch (e) {
               setLocal(() {
-                error = 'Could not create group: $e';
+                error = 'Could not rename group: $e';
                 loading = false;
               });
             }
           }
 
           return AlertDialog(
-            title: const Text('Create group'),
+            title: const Text('Rename group'),
             content: SizedBox(
               width: 360,
               child: Column(
@@ -97,7 +102,7 @@ Future<void> showCreateGroupDialog(
                         height: 22,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Create'),
+                    : const Text('Save'),
               ),
             ],
           );

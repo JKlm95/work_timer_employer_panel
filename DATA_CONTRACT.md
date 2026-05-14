@@ -8,7 +8,7 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 - **Źródło prawdy:** tak — lista „kogo śledzi” dany pracodawca.
 - **Zapisuje:** panel (dodanie / usunięcie wpisu, `groupIds`, ewentualne pola z linkowania).
-- **Czyta:** panel.
+- **`groupIds`:** tablica ID dokumentów z `employers/.../groups` — wiele grup na jednego pracownika; przy odczycie panel deduplikuje i ignoruje puste wpisy; w UI etykiety grup pomijają nieistniejące ID (nie zmieniają one `trackedWorkspaces`).
 - **Uwaga:** imię, nazwisko, `displayName`, `employeeUid` w streamie są **sczytywane z `userEmailIndex`** (klucz: `employeeWorkEmailLower` z dokumentu, z fallbackiem do `employeeEmailLower`) i mergowane w UI (`TrackedEmployee.mergedWithUserEmailIndex`) — dokument `trackedEmployees` może być **cache’em** danych osobowych względem indeksu.
 - **Linkowanie:** odbywa się po **służbowym e-mailu pracownika** (`employeeWorkEmailLower` / `employeeWorkEmailDomain`) i indeksie **`employeeWorkEmailIndex`** — patrz sekcja poniżej.
 
@@ -30,8 +30,11 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 
 ### `employers/{employerUid}/groups/{groupId}`
 
-- **Źródło prawdy:** tak — grupy organizacyjne pracodawcy.
+- **Źródło prawdy:** tak — **etykiety organizacyjne tylko w panelu pracodawcy** (mobile ich nie używa).
 - **Zapisuje / czyta:** panel.
+- **Pola (bieżący kontrakt UI):** `name` (string), `createdAt`, `updatedAt` (timestamp). Opcjonalne legacy: `colorHex` (starsze dokumenty — nowe grupy mogą go nie zapisywać).
+- **Uprawnienia / zakres danych:** grupy **nie** wpływają na `trackedWorkspaces`, wpisy czasu ani mobile — służą wyłącznie do filtrowania i porządkowania list w panelu. Rzeczywisty zakres widocznych workspace’ów i wpisów nadal wynika wyłącznie z **`employers/.../trackedWorkspaces`**.
+- **Przypisanie pracownika:** pole `groupIds` (tablica stringów, unikalne id grup) na **`employers/{employerUid}/trackedEmployees/{trackedId}`** — pracownik może należeć do wielu grup; brak pola lub pusta tablica = brak przypisania; ID wskazujące na nieistniejącą grupę są ignorowane w UI (sekcja „Ungrouped” / brak etykiety grupy).
 
 ### `users/{employeeUid}/entries/{entryId}`
 

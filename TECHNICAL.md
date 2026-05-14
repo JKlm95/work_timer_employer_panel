@@ -106,7 +106,8 @@ Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. 
 - `employers/{employerUid}/trackedEmployees/{id}`
 - `employers/{employerUid}/trackedEmployeeUids/{employeeUid}` — **indeks** „znam UID” (m.in. `live/status`); nie jest już jedynym gate’em do `entries`.
 - `employers/{employerUid}/trackedWorkspaces/{accessId}` — **`accessId = employeeUid_workspaceId`**; **rzeczywisty zakres** widocznych workspace’ów i wpisów w panelu.
-- `employers/{employerUid}/groups/{groupId}`
+- `employers/{employerUid}/groups/{groupId}` — organizacja listy śledzonych w panelu (`name`, timestamps; opcjonalny legacy `colorHex`). **Grupy nie są mechanizmem uprawnień** — dostęp do danych pracownika w panelu wynika wyłącznie z **`trackedWorkspaces`**. Przypisania: `trackedEmployees.groupIds` (wiele grup na osobę).
+- **Ekran Groups** (`lib/features/groups/groups_screen.dart`): łączy strumienie `trackedWorkspaces`, `trackedEmployees` i `groups` — w rozwinięciu grupy widać tylko pracowników, którzy mają co najmniej jeden dokument w `trackedWorkspaces`. Sekcja **Ungrouped**: brak ważnego przypisania do istniejącej grupy (puste `groupIds` albo same martwe ID). **Manage members** zapisuje wyłącznie członkostwo w danej grupie (`FirestoreService.applyTrackedEmployeesMembershipInGroup`); usuwanie grupy domyślnie czyści `groupId` z tablic u pracowników (`deleteGroup` + batch). **Employees**: filtr „Group” (All / Ungrouped / grupa) — wyłącznie filtrowanie UI listy `trackedEmployees`, bez wpływu na `trackedWorkspaces`.
 
 **Firestore indeksy:** zapytania miesięczne o wpisy u pracodawcy używają `where('workspaceId', whereIn: …)` (max 10 ID na zapytanie) + `start` — w konsoli Firebase dodaj indeks złożony na `entries`: `workspaceId` + `start` (zakres), jeśli deploy zwróci link do utworzenia indeksu.
 

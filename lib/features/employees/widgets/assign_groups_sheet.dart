@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/employee_name_utils.dart';
+import '../../../core/utils/employer_group_ids_utils.dart';
 import '../../../models/employer_group.dart';
 import '../../../models/tracked_employee.dart';
 import '../../../services/firestore_service.dart';
@@ -12,7 +13,7 @@ Future<void> showAssignGroupsSheet(
   required TrackedEmployee tracked,
   required List<EmployerGroup> allGroups,
 }) async {
-  final selected = List<String>.from(tracked.groupIds);
+  final selected = List<String>.from(parseAndDedupeGroupIds(tracked.groupIds));
 
   await showModalBottomSheet<void>(
     context: context,
@@ -62,17 +63,21 @@ Future<void> showAssignGroupsSheet(
                           onChanged: (v) {
                             setLocal(() {
                               if (v == true) {
-                                selected.add(g.id);
+                                if (!selected.contains(g.id)) {
+                                  selected.add(g.id);
+                                }
                               } else {
                                 selected.remove(g.id);
                               }
                             });
                           },
                           title: Text(g.name),
-                          secondary: CircleAvatar(
-                            backgroundColor:
-                                _parseHex(g.colorHex) ?? Colors.grey,
-                            radius: 12,
+                          secondary: Icon(
+                            Icons.folder_outlined,
+                            size: 22,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -85,6 +90,9 @@ Future<void> showAssignGroupsSheet(
                                 employerUid,
                                 tracked.id,
                                 selected,
+                                knownGroupIds: allGroups
+                                    .map((x) => x.id)
+                                    .toSet(),
                               );
                               if (context.mounted) Navigator.pop(context);
                             },
@@ -99,13 +107,4 @@ Future<void> showAssignGroupsSheet(
       );
     },
   );
-}
-
-Color? _parseHex(String hex) {
-  var h = hex.replaceFirst('#', '');
-  if (h.length == 6) {
-    h = 'FF$h';
-  }
-  if (h.length != 8) return null;
-  return Color(int.parse(h, radix: 16));
 }

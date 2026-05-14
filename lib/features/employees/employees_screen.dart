@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_layout.dart';
 import '../../core/utils/employee_name_utils.dart';
+import '../../core/utils/employer_group_ids_utils.dart';
 import '../../core/utils/report_period.dart';
 import '../../core/widgets/app_empty_state.dart';
 import '../../core/widgets/app_pulse_loading.dart';
@@ -35,11 +36,27 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
   DateTime? _lastMonthRefresh;
   Timer? _autoMonthTimer;
   final _searchCtrl = TextEditingController();
+  String? _groupFilterId;
 
-  List<TrackedEmployee> _filtered(List<TrackedEmployee> tracked) {
+  List<TrackedEmployee> _visibleEmployees(
+    List<TrackedEmployee> tracked,
+    List<EmployerGroup> groups,
+  ) {
+    final existingIds = groups.map((g) => g.id).toSet();
+    Iterable<TrackedEmployee> list = tracked;
+    final fid = _groupFilterId;
+    if (fid != null) {
+      if (fid == kEmployeesUngroupedFilterSentinel) {
+        list = list.where(
+          (t) => !employeeHasAnyValidGroupAssignment(t.groupIds, existingIds),
+        );
+      } else {
+        list = list.where((t) => t.groupIds.contains(fid));
+      }
+    }
     final q = _searchCtrl.text.trim().toLowerCase();
-    if (q.isEmpty) return tracked;
-    return tracked.where((t) {
+    if (q.isEmpty) return list.toList();
+    return list.where((t) {
       return employeeFullName(t).toLowerCase().contains(q) ||
           t.employeeEmail.toLowerCase().contains(q) ||
           t.companyName.toLowerCase().contains(q);
@@ -137,7 +154,7 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
               );
             }
 
-            final visible = _filtered(tracked);
+            final visible = _visibleEmployees(tracked, groups);
 
             return Padding(
               padding: const EdgeInsets.all(AppLayout.pagePadding),
@@ -161,6 +178,46 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                                   hintText: 'Search name, email, company…',
                                   isDense: true,
                                   prefixIcon: Icon(Icons.search, size: 22),
+                                ),
+                              ),
+                            );
+                            final groupFilter = SizedBox(
+                              width: narrow ? double.infinity : 220,
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'Group',
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String?>(
+                                    isExpanded: true,
+                                    isDense: true,
+                                    value: _groupFilterId,
+                                    hint: const Text('All groups'),
+                                    items: [
+                                      const DropdownMenuItem<String?>(
+                                        value: null,
+                                        child: Text('All groups'),
+                                      ),
+                                      const DropdownMenuItem<String?>(
+                                        value:
+                                            kEmployeesUngroupedFilterSentinel,
+                                        child: Text('Ungrouped'),
+                                      ),
+                                      ...groups.map(
+                                        (g) => DropdownMenuItem<String?>(
+                                          value: g.id,
+                                          child: Text(
+                                            g.name,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: (v) =>
+                                        setState(() => _groupFilterId = v),
+                                  ),
                                 ),
                               ),
                             );
@@ -258,6 +315,8 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                                   const SizedBox(height: 10),
                                   search,
                                   const SizedBox(height: 10),
+                                  groupFilter,
+                                  const SizedBox(height: 10),
                                   actions,
                                 ],
                               );
@@ -296,6 +355,8 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                                 ),
                                 search,
                                 const SizedBox(width: 12),
+                                groupFilter,
+                                const SizedBox(width: 12),
                                 Flexible(child: actions),
                               ],
                             );
@@ -325,19 +386,16 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                               )
                             : visible.isEmpty
                             ? Card(
-                                child: AppEmptyState(
-                                  icon: Icons.search_off_rounded,
-                                  title: 'No employees match your search',
-                                  subtitle:
-                                      'Try a different keyword or clear the search field.',
-                                  action: OutlinedButton.icon(
-                                    onPressed: () {
-                                      _searchCtrl.clear();
-                                      setState(() {});
-                                    },
-                                    icon: const Icon(Icons.clear),
-                                    label: const Text('Clear search'),
-                                  ),
+                                child: _NoVisibleEmployeesMessage(
+                                  searchCtrl: _searchCtrl,
+                                  hasGroupFilter: _groupFilterId != null,
+                                  onClearSearch: () {
+                                    _searchCtrl.clear();
+                                    setState(() {});
+                                  },
+                                  onClearGroupFilter: () {
+                                    setState(() => _groupFilterId = null);
+                                  },
                                 ),
                               )
                             : Card(
@@ -641,9 +699,10 @@ class _EmployeesTableState extends State<_EmployeesTable> {
   }
 
   static String _groupLabels(TrackedEmployee t, List<EmployerGroup> groups) {
-    if (t.groupIds.isEmpty) return '—';
     final map = {for (final g in groups) g.id: g.name};
-    return t.groupIds.map((id) => map[id] ?? id).join(', ');
+    final names = t.groupIds.map((id) => map[id]).whereType<String>().toList();
+    if (names.isEmpty) return '—';
+    return names.join(', ');
   }
 
   static String _money(Map<String, double> m) {
@@ -651,6 +710,62 @@ class _EmployeesTableState extends State<_EmployeesTable> {
     return m.entries
         .map((e) => '${e.key} ${e.value.toStringAsFixed(2)}')
         .join(' · ');
+  }
+}
+
+class _NoVisibleEmployeesMessage extends StatelessWidget {
+  const _NoVisibleEmployeesMessage({
+    required this.searchCtrl,
+    required this.hasGroupFilter,
+    required this.onClearSearch,
+    required this.onClearGroupFilter,
+  });
+
+  final TextEditingController searchCtrl;
+  final bool hasGroupFilter;
+  final VoidCallback onClearSearch;
+  final VoidCallback onClearGroupFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    final q = searchCtrl.text.trim();
+    if (q.isNotEmpty) {
+      return AppEmptyState(
+        icon: Icons.search_off_rounded,
+        title: 'No employees match your search',
+        subtitle: 'Try a different keyword or clear the search field.',
+        action: OutlinedButton.icon(
+          onPressed: onClearSearch,
+          icon: const Icon(Icons.clear),
+          label: const Text('Clear search'),
+        ),
+      );
+    }
+    if (hasGroupFilter) {
+      return AppEmptyState(
+        icon: Icons.filter_alt_off_outlined,
+        title: 'No employees in this filter',
+        subtitle: 'Change the group filter or show all employees.',
+        action: OutlinedButton.icon(
+          onPressed: onClearGroupFilter,
+          icon: const Icon(Icons.clear),
+          label: const Text('Show all groups'),
+        ),
+      );
+    }
+    return AppEmptyState(
+      icon: Icons.search_off_rounded,
+      title: 'No employees match',
+      subtitle: 'Adjust filters.',
+      action: OutlinedButton.icon(
+        onPressed: () {
+          onClearSearch();
+          onClearGroupFilter();
+        },
+        icon: const Icon(Icons.clear_all),
+        label: const Text('Clear filters'),
+      ),
+    );
   }
 }
 

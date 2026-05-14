@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 
+import '../core/utils/employer_group_ids_utils.dart';
 import 'user_email_index.dart';
 
 /// Employer-side link to an employee — stored under `employers/{employerUid}/trackedEmployees`.
@@ -88,7 +89,6 @@ class TrackedEmployee extends Equatable {
   }
 
   factory TrackedEmployee.fromDoc(String id, Map<String, dynamic> data) {
-    final groups = data['groupIds'];
     final emailLower =
         (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
     final workLower =
@@ -110,9 +110,7 @@ class TrackedEmployee extends Equatable {
       companyName: data['companyName'] as String? ?? '',
       companySlug: data['companySlug'] as String? ?? '',
       addedAt: _ts(data['addedAt']),
-      groupIds: groups is List
-          ? groups.map((e) => e.toString()).toList()
-          : const [],
+      groupIds: parseAndDedupeGroupIds(data['groupIds']),
     );
   }
 

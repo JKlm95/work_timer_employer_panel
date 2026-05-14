@@ -138,7 +138,8 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             final groups = groupsSnap.data ?? [];
             final groupName = {for (final g in groups) g.id: g.name};
             final groupLabels = tr.groupIds
-                .map((id) => groupName[id] ?? id)
+                .map((id) => groupName[id])
+                .whereType<String>()
                 .join(', ');
 
             return Scaffold(

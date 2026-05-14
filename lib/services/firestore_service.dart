@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show min;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import '../core/debug/live_status_debug_config.dart';
 import '../core/utils/employer_entry_soft_patch.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/employee_presence_utils.dart';
+import '../core/utils/employer_group_ids_utils.dart';
 import '../core/utils/employer_workspace_query_utils.dart';
 import '../core/utils/report_period.dart';
 import '../core/utils/work_email_validation.dart';
@@ -1128,45 +1130,69 @@ class FirestoreService {
     });
   }
 
-  Future<void> createGroup(
-    String employerUid, {
-    required String name,
-    required String colorHex,
-  }) async {
-    final doc = _employerGroups(employerUid).doc();
-    await doc.set({
-      'name': name,
-      'colorHex': colorHex,
+  Future<String> createGroup(String employerUid, {required String name}) async {
+    final ref = _employerGroups(employerUid).doc();
+    await ref.set({
+      'name': name.trim(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    return ref.id;
   }
 
-  Future<void> updateGroup(
+  Future<void> updateGroupName(
     String employerUid,
     String groupId, {
     required String name,
-    required String colorHex,
   }) async {
     await _employerGroups(employerUid).doc(groupId).update({
-      'name': name,
-      'colorHex': colorHex,
+      'name': name.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> deleteGroup(String employerUid, String groupId) async {
-    await _employerGroups(employerUid).doc(groupId).delete();
-    final tracked = await _employerTracked(employerUid).get();
-    for (final d in tracked.docs) {
-      final data = d.data();
-      final ids =
-          (data['groupIds'] as List?)?.map((e) => e.toString()).toList() ??
-          <String>[];
-      if (ids.contains(groupId)) {
-        await d.reference.update({
-          'groupIds': FieldValue.arrayRemove([groupId]),
-        });
+  Future<void> deleteGroup(
+    String employerUid,
+    String groupId, {
+    bool removeReferencesFromEmployees = true,
+  }) async {
+    final gRef = _employerGroups(employerUid).doc(groupId);
+    if (!removeReferencesFromEmployees) {
+      await gRef.delete();
+      return;
+    }
+
+    final trackedSnap = await _employerTracked(employerUid).get();
+    final entries =
+        <MapEntry<DocumentReference<Map<String, dynamic>>, List<String>>>[];
+    for (final d in trackedSnap.docs) {
+      final ids = parseAndDedupeGroupIds(d.data()['groupIds']);
+      if (!ids.contains(groupId)) continue;
+      entries.add(
+        MapEntry(d.reference, ids.where((id) => id != groupId).toList()),
+      );
+    }
+
+    var firstBatch = true;
+    var index = 0;
+    const maxOps = 450;
+
+    while (firstBatch || index < entries.length) {
+      final batch = _db.batch();
+      var ops = 0;
+      if (firstBatch) {
+        batch.delete(gRef);
+        ops = 1;
+        firstBatch = false;
+      }
+      while (index < entries.length && ops < maxOps) {
+        final e = entries[index];
+        batch.update(e.key, {'groupIds': e.value});
+        ops++;
+        index++;
+      }
+      if (ops > 0) {
+        await batch.commit();
       }
     }
   }
@@ -1174,11 +1200,57 @@ class FirestoreService {
   Future<void> setTrackedEmployeeGroups(
     String employerUid,
     String trackedId,
-    List<String> groupIds,
-  ) async {
+    List<String> groupIds, {
+    Set<String>? knownGroupIds,
+  }) async {
+    var cleaned = parseAndDedupeGroupIds(groupIds);
+    if (knownGroupIds != null) {
+      cleaned = cleaned.where((id) => knownGroupIds.contains(id)).toList();
+    }
     await _employerTracked(
       employerUid,
-    ).doc(trackedId).update({'groupIds': groupIds});
+    ).doc(trackedId).update({'groupIds': cleaned});
+  }
+
+  /// Sets membership of [groupId] per tracked employee; other `groupIds` entries are preserved.
+  Future<void> applyTrackedEmployeesMembershipInGroup({
+    required String employerUid,
+    required String groupId,
+    required Map<String, bool> trackedIdInGroup,
+  }) async {
+    if (trackedIdInGroup.isEmpty) return;
+    final refs = trackedIdInGroup.keys
+        .map((id) => _employerTracked(employerUid).doc(id))
+        .toList();
+    final snaps = await Future.wait(refs.map((r) => r.get()));
+
+    final writes =
+        <MapEntry<DocumentReference<Map<String, dynamic>>, List<String>>>[];
+    for (var i = 0; i < snaps.length; i++) {
+      final snap = snaps[i];
+      if (!snap.exists || snap.data() == null) continue;
+      final id = snap.id;
+      final wantIn = trackedIdInGroup[id];
+      if (wantIn == null) continue;
+      final cur = parseAndDedupeGroupIds(snap.data()!['groupIds']);
+      final has = cur.contains(groupId);
+      if (has == wantIn) continue;
+      final next = wantIn
+          ? parseAndDedupeGroupIds([...cur, groupId])
+          : cur.where((x) => x != groupId).toList();
+      writes.add(MapEntry(snap.reference, next));
+    }
+
+    const chunk = 450;
+    for (var start = 0; start < writes.length; start += chunk) {
+      final end = min(start + chunk, writes.length);
+      final batch = _db.batch();
+      for (var j = start; j < end; j++) {
+        final e = writes[j];
+        batch.update(e.key, {'groupIds': e.value});
+      }
+      await batch.commit();
+    }
   }
 
   Future<void> removeTrackedEmployee(

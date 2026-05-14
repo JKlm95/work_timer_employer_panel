@@ -2,6 +2,15 @@
 
 Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (Auth + Firestore) i zdeployowaną mobilkę zapisującą dane zgodnie z [`DATA_CONTRACT.md`](DATA_CONTRACT.md).
 
+## Grupy (panel)
+
+- [ ] **Zakładka Groups** — lista grup z rozwinięciem, liczba pracowników, **Manage members** (checkboxy), rename, delete z dialogiem (tekst: usuwanie nie kasuje pracowników ani wpisów; checkbox „Remove this group from employees” domyślnie włączony).
+- [ ] **Ungrouped** — pracownicy z `trackedWorkspaces` bez ważnego przypisania do istniejącej grupy; pusty stan: „All employees are assigned to groups”.
+- [ ] **Widoczność w grupach** — pracownik bez żadnego `trackedWorkspaces` nie pojawia się w sekcjach grup / Ungrouped na ekranie Groups (organizer respektuje realny zakres dostępu).
+- [ ] **Employees — filtr Group** — All groups / Ungrouped / konkretna grupa; nie zmienia dostępu do danych (tylko lista UI).
+- [ ] **Duplikat nazwy grupy** (case-insensitive) — komunikat przy create/rename.
+- [ ] **Przypisanie z arkusza „Assign groups”** (szczegóły pracownika) — zapis `groupIds` z odfiltrowaniem nieistniejących id grup.
+
 ## Auth i pracownicy
 
 - [ ] **Logowanie employer** — email/hasło, po zalogowaniu shell (sidebar + treść).
