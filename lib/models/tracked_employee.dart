@@ -5,15 +5,17 @@ import 'user_email_index.dart';
 
 /// Employer-side link to an employee — stored under `employers/{employerUid}/trackedEmployees`.
 ///
-/// Personal fields are written from [UserEmailIndex] at link time; the list stream merges live
-/// index data for display ([mergedWithUserEmailIndex]). Optional persistence refresh:
-/// [FirestoreService.syncTrackedEmployeeProfileFromIndex].
+/// Linking is by **employee work email** (see `employeeWorkEmailLower` / `employeeWorkEmailDomain`).
+/// Personal fields are merged from [UserEmailIndex] when keyed by the same lowercased email
+/// ([mergedWithUserEmailIndex]).
 class TrackedEmployee extends Equatable {
   const TrackedEmployee({
     required this.id,
     required this.employeeUid,
     required this.employeeEmail,
     required this.employeeEmailLower,
+    required this.employeeWorkEmailLower,
+    required this.employeeWorkEmailDomain,
     this.firstName,
     this.lastName,
     this.displayName,
@@ -27,6 +29,13 @@ class TrackedEmployee extends Equatable {
   final String employeeUid;
   final String employeeEmail;
   final String employeeEmailLower;
+
+  /// Work email used for `employeeWorkEmailIndex` / workspace sharing (lowercase).
+  final String employeeWorkEmailLower;
+
+  /// Domain of [employeeWorkEmailLower] (lowercase), e.g. `firma.pl`.
+  final String employeeWorkEmailDomain;
+
   final String? firstName;
   final String? lastName;
   final String? displayName;
@@ -66,6 +75,8 @@ class TrackedEmployee extends Equatable {
       employeeEmailLower: nz(index.emailLower).isNotEmpty
           ? index.emailLower.trim().toLowerCase()
           : employeeEmailLower,
+      employeeWorkEmailLower: employeeWorkEmailLower,
+      employeeWorkEmailDomain: employeeWorkEmailDomain,
       firstName: opt(index.firstName),
       lastName: opt(index.lastName),
       displayName: opt(index.displayName),
@@ -78,11 +89,21 @@ class TrackedEmployee extends Equatable {
 
   factory TrackedEmployee.fromDoc(String id, Map<String, dynamic> data) {
     final groups = data['groupIds'];
+    final emailLower =
+        (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
+    final workLower =
+        (data['employeeWorkEmailLower'] as String?)?.trim().toLowerCase() ??
+        emailLower;
+    final workDomain =
+        (data['employeeWorkEmailDomain'] as String?)?.trim().toLowerCase() ??
+        '';
     return TrackedEmployee(
       id: id,
       employeeUid: data['employeeUid'] as String? ?? '',
       employeeEmail: data['employeeEmail'] as String? ?? '',
-      employeeEmailLower: data['employeeEmailLower'] as String? ?? '',
+      employeeEmailLower: emailLower,
+      employeeWorkEmailLower: workLower,
+      employeeWorkEmailDomain: workDomain,
       firstName: data['firstName'] as String?,
       lastName: data['lastName'] as String?,
       displayName: data['displayName'] as String?,

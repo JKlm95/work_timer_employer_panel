@@ -8,29 +8,41 @@ String trackedWorkspaceAccessDocId(String employeeUid, String workspaceId) {
   return '${u}_$w';
 }
 
-/// Whether [w] should be linked into employer panel access for this employer context.
+/// Whether [w] is visible/linkable for this employer when linking by **employee work email**
+/// and **employer account email domain** (no `linkedEmployerEmails`, no employer email on workspace).
 bool workspaceQualifiesForEmployerPanel({
   required Workspace w,
-  required String employeeEmailLower,
+  required String employeeWorkEmailLower,
   required String employerDomain,
-  required String normalizedCompanySlug,
-  required String employerEmailLower,
 }) {
-  final wEmail = w.employeeWorkEmail?.trim().toLowerCase();
-  if (wEmail != employeeEmailLower) return false;
-  final wSlug = (w.companySlug ?? '').trim().toLowerCase();
-  if (wSlug != normalizedCompanySlug) return false;
+  final wEmail = (w.employeeWorkEmail ?? '').trim().toLowerCase();
+  if (wEmail != employeeWorkEmailLower) return false;
   final wsDomain = w.employeeWorkEmailDomain?.trim().toLowerCase();
   if (wsDomain == null || wsDomain.isEmpty || wsDomain != employerDomain) {
     return false;
   }
   if (w.isSharedWithEmployer != true) return false;
-  final links = w.linkedEmployerEmails;
-  if (links != null && links.isNotEmpty) {
-    final set = links.map((e) => e.trim().toLowerCase()).toSet();
-    if (!set.contains(employerEmailLower)) return false;
-  }
   return true;
+}
+
+/// Applies [workspaceQualifiesForEmployerPanel] to loaded workspace docs (dedupe by [Workspace.id]).
+List<Workspace> filterWorkspacesForEmployerWorkEmailAccess(
+  Iterable<Workspace> workspaces, {
+  required String employeeWorkEmailLower,
+  required String employerDomain,
+}) {
+  final byId = <String, Workspace>{};
+  for (final w in workspaces) {
+    if (!workspaceQualifiesForEmployerPanel(
+      w: w,
+      employeeWorkEmailLower: employeeWorkEmailLower,
+      employerDomain: employerDomain,
+    )) {
+      continue;
+    }
+    byId[w.id] = w;
+  }
+  return byId.values.toList();
 }
 
 /// Filters [entries] to those whose [WorkEntry.workspaceId] is allowed.

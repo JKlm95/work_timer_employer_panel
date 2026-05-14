@@ -5,7 +5,7 @@ Krótka lista regresji przed demo / portfolio. Zakłada działający Firebase (A
 ## Auth i pracownicy
 
 - [ ] **Logowanie employer** — email/hasło, po zalogowaniu shell (sidebar + treść).
-- [ ] **Dodanie pracownika po e-mailu** — poprawna domena + firma/slug; sukces → wpis na liście; błąd → czytelny komunikat („Employee not found” gdy brak indeksu).
+- [ ] **Dodanie pracownika po work email** — ten sam adres co na udostępnionym workspace w mobile; domena konta pracodawcy musi pasować; sukces → wpis na liście; brak `employeeWorkEmailIndex` → *No shared workspace found for this work email.*; brak pasujących workspace’ów → komunikaty z `EmployerLinkException` (m.in. *No shared workspace for your company domain.*).
 - [ ] **Profil pracownika** — wejście w szczegóły z listy: nazwa, firma, grupy, presence, ostatnia aktywność (tylko wpisy z **udostępnionych** workspace’ów), karty projektów tylko z **`trackedWorkspaces`**.
 
 ## Timesheet (szczegóły pracownika)

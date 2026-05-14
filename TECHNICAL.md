@@ -33,7 +33,7 @@ lib/
     utils/               # Domena emaila, slug firmy, okresy raportów, nazwy pracowników
     export/              # Pobieranie plików na Web (conditional import)
     widgets/             # m.in. WorkStatusBadge
-  models/                # Workspace, WorkEntry, TrackedEmployee, EmployerGroup, UserEmailIndex
+  models/                # Workspace, WorkEntry, TrackedEmployee, EmployerGroup, UserEmailIndex, EmployeeWorkEmailIndex
   services/
     firebase_auth_service.dart
     firestore_service.dart       # Zapytania, linkowanie, billing workspace, presence
@@ -54,14 +54,20 @@ lib/
 
 ### Aplikacja mobilna
 
-- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`, **`isSharedWithEmployer`**, **`linkedEmployerEmails`** (opcjonalna lista e-maili pracodawców — lowercase)
+- `users/{employeeUid}/workspaces/{workspaceId}` — m.in. `companySlug`, `companyName`, `employeeWorkEmail`, `employeeWorkEmailDomain`, `hourlyRate`, `currency`, `isArchived`, **`isSharedWithEmployer`**
 - `users/{employeeUid}/entries/{entryId}` — wpisy czasu; `isDeleted`, `entryType`, `isBillable`, `start`/`end`
 
-### Indeks email → UID
+### Indeks work email → UID + workspace ids
+
+- `employeeWorkEmailIndex/{workEmailLower}` → `{ uid, workEmailLower, domain, workspaceIds[], updatedAt? }`
+
+**Wymaganie (mobile):** indeks musi być utrzymywany po ustawieniu work email na udostępnionych workspace’ach — bez tego panel nie znajdzie pracownika po work email (komunikat „No shared workspace found for this work email.”).
+
+### Indeks email → UID (profil)
 
 - `userEmailIndex/{emailLower}` → `{ uid, email, displayName?, … }`
 
-**Wymaganie (mobile):** indeks musi być utrzymywany po logowaniu — bez tego linkowanie po emailu nie zadziała.
+**Wymaganie (mobile):** opcjonalnie dla imion na liście — `trackedEmployees` merge w UI.
 
 ## Live status (`users/{employeeUid}/live/status`)
 
@@ -106,20 +112,25 @@ Starsze heurystyki oparte o otwarty wpis (`end == null`) są **dodatkiem** (np. 
 
 ## Ustawienia — Rebuild workspace access
 
-- Ekran **Settings** zawiera akcję **Rebuild workspace access** (`FirestoreService.rebuildTrackedWorkspaceAccess`): dla każdego `trackedEmployees` odbudowuje zestaw dokumentów `trackedWorkspaces` wg `tracked_workspace_policy.dart`. **Brak automatycznej migracji** przy starcie aplikacji — tylko jawny przycisk.
+- Ekran **Settings** zawiera akcję **Rebuild workspace access** (`FirestoreService.rebuildTrackedWorkspaceAccess`): dla każdego `trackedEmployees` odbudowuje zestaw dokumentów `trackedWorkspaces` wg pól **work email / domena** zapisanych na wierszu śledzenia i aktualnych dokumentów `users/.../workspaces` (`tracked_workspace_policy.dart`). **Brak automatycznej migracji** przy starcie aplikacji — tylko jawny przycisk.
 
 ### Dozwolone zapisy MVP w danych „pracownika”
 
 - Tylko **`updateWorkspaceBilling`** na `users/{uid}/workspaces/{id}` (`hourlyRate`, `currency`, `updatedAt`) — **po sprawdzeniu** `trackedWorkspaces`. Reszta danych pracownika — read-only z panelu.
 
-## Logika dodawania pracownika (MVP)
+## Logika dodawania pracownika (work email)
 
-1. Normalizacja maila pracownika do lowercase.
-2. Normalizacja nazwy firmy do **slug** (`core/utils/company_slug_utils.dart`).
-3. Odczyt UID z `userEmailIndex`.
-4. Utworzenie / utrzymanie `trackedEmployeeUids/{uid}` (dostęp do `live/status` i odczytu workspace’ów przy linku).
-5. Dopasowanie workspace’ów: **`workspaceQualifiesForEmployerPanel`** (`tracked_workspace_policy.dart`) + slug firmy z formularza; utworzenie dokumentów **`trackedWorkspaces`** dla wszystkich pasujących projektów.
-6. Zapis w `trackedEmployees`.
+1. Normalizacja work email (trim + lowercase) i walidacja formatu.
+2. Domena pracodawcy z **Firebase Auth** (`email` konta) — część po `@`, lowercase.
+3. Odczyt `employeeWorkEmailIndex/{workEmailLower}` — brak dokumentu → komunikat *No shared workspace found for this work email.*
+4. Porównanie `index.domain` z domeną pracodawcy — niespójność → *This workspace belongs to a different company domain.*
+5. Pusta lista `workspaceIds` → *This work email has no shared workspaces.*
+6. Pobranie dokumentów `users/{uid}/workspaces/{id}` dla id z indeksu; filtrowanie **`workspaceQualifiesForEmployerPanel`** (shared + `employeeWorkEmail` + `employeeWorkEmailDomain`) — brak wyników → *No shared workspace for your company domain.*
+7. Utworzenie / utrzymanie `trackedEmployeeUids/{uid}`.
+8. Zapis `trackedEmployees` (m.in. `employeeWorkEmailLower`, `employeeWorkEmailDomain`; imiona z `userEmailIndex` jeśli dostępny).
+9. Utworzenie dokumentów **`trackedWorkspaces`** dla wszystkich pasujących workspace’ów (`accessId = employeeUid_workspaceId`).
+
+**Migracja:** istniejące `trackedEmployees` bez `employeeWorkEmailLower` używają w rebuildzie fallbacku `employeeEmailLower` (legacy). Warto użyć **Rebuild workspace access** po aktualizacji mobile.
 
 ## Wpisy czasu — timesheet pracodawcy
 

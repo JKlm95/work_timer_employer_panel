@@ -17,7 +17,7 @@ Struktura katalogów i motyw: **[`TECHNICAL.md`](TECHNICAL.md)**.
 ## Współpraca z aplikacją mobilną
 
 - **Wspólny projekt Firebase** — te same kolekcje i dokumenty co mobile.
-- **Indeks** `userEmailIndex/{emailLower}` musi być utrzymywany przez **mobile** po logowaniu — inaczej panel nie znajdzie pracownika po adresie e-mail (komunikat „Employee not found”).
+- **Indeks** `employeeWorkEmailIndex/{workEmailLower}` musi być utrzymywany przez **mobile** po ustawieniu work email na udostępnionych workspace’ach — inaczej panel nie znajdzie pracownika (komunikat „No shared workspace found for this work email.”). Opcjonalnie **`userEmailIndex`** dla imion na liście.
 - **Wpisy czasu** `users/{uid}/entries` i **projekty** `users/{uid}/workspaces` są źródłem prawdy po stronie pracownika; panel je **czyta**, a w MVP **edytuje wyłącznie** `hourlyRate` / `currency` na workspace (zapis do Firestore).
 - **Obecność i timer w locie** — mobile utrzymuje `users/{uid}/live/status`; panel **tylko czyta** i liczy **live amount** wyłącznie w UI (bez zapisu kwoty do bazy). Szczegóły semantyki statusów: **[`TECHNICAL.md`](TECHNICAL.md)** (sekcja Live status).
 
@@ -27,7 +27,7 @@ Struktura katalogów i motyw: **[`TECHNICAL.md`](TECHNICAL.md)**.
 
 1. **Logowanie** — Firebase Auth; po sukcesie wejście do shell (nawigacja boczna).
 2. **Dashboard** — liczba śledzonych, grup, „Working now”, godziny i **Estimated amount (month)** z **zapisanych** wpisów; **Live running (est.)** z dokumentu live + stawek; skróty do pracowników i raportów.
-3. **Dodanie pracownika** — e-mail służbowy + dopasowanie firmy (slug); zapis pod `employers/{uid}/trackedEmployees` (+ `trackedEmployeeUids` dla reguł).
+3. **Dodanie pracownika** — pełny **work email** pracownika (jak na workspace w mobile); domena konta pracodawcy musi być zgodna z domeną work email; zapis pod `employers/{uid}/trackedEmployees` + `trackedWorkspaces` + `trackedEmployeeUids` dla reguł.
 4. **Lista pracowników** — miesięczne godziny/kwoty, status z live, przejście do szczegółów.
 5. **Szczegół pracownika** — projekty (workspace) dla domeny pracodawcy, edycja stawki, raport wpisów.
 6. **Grupy** — organizacja listy pracowników (bez zmiany danych czasu po stronie employee).

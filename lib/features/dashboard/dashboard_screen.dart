@@ -367,10 +367,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final filtered = entries.where((e) {
           if (e.isDeleted || e.end == null) return false;
           if (wsMap[e.workspaceId] == null) return false;
-          if (wsMap[e.workspaceId]?.companySlug?.toLowerCase() !=
-              t.companySlug.toLowerCase()) {
-            return false;
-          }
           return true;
         }).toList();
         totalHours += _calc.hoursForEntries(filtered);

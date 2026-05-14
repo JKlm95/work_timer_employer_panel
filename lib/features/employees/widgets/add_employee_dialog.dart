@@ -8,7 +8,6 @@ Future<void> showAddEmployeeDialog(
   FirestoreService firestore,
 ) async {
   final emailCtrl = TextEditingController();
-  final companyCtrl = TextEditingController();
   bool loading = false;
   String? error;
 
@@ -21,9 +20,8 @@ Future<void> showAddEmployeeDialog(
             final employer = FirebaseAuth.instance.currentUser;
             if (employer == null) return;
             final workEmail = emailCtrl.text.trim();
-            final company = companyCtrl.text.trim();
-            if (workEmail.isEmpty || company.isEmpty) {
-              setLocal(() => error = 'Fill in both fields.');
+            if (workEmail.isEmpty) {
+              setLocal(() => error = 'Enter the employee work email.');
               return;
             }
             setLocal(() {
@@ -31,11 +29,10 @@ Future<void> showAddEmployeeDialog(
               error = null;
             });
             try {
-              await firestore.linkEmployee(
+              await firestore.linkEmployeeByWorkEmail(
                 employerUid: employer.uid,
                 employerEmail: employer.email ?? '',
                 employeeWorkEmailInput: workEmail,
-                companyNameInput: company,
               );
               if (!dialogContext.mounted) return;
               Navigator.of(dialogContext).pop();
@@ -69,7 +66,8 @@ Future<void> showAddEmployeeDialog(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Link someone by the work email they use in Work Timer and the company name that matches their workspace.',
+                    'Enter the work email the employee set on their shared workspace in the mobile app. '
+                    'It must match your company email domain.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       height: 1.35,
@@ -82,19 +80,10 @@ Future<void> showAddEmployeeDialog(
                       labelText: 'Employee work email',
                       hintText: 'name@company.com',
                       helperText:
-                          'Must match the account they log into on mobile.',
+                          'Enter the employee’s work email used in the shared workspace.',
                     ),
                     keyboardType: TextInputType.emailAddress,
                     autofocus: true,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: companyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Company name',
-                      hintText: 'Same as workspace company / slug',
-                      helperText: 'Used to match the correct workspaces.',
-                    ),
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 14),

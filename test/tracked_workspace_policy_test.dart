@@ -6,7 +6,7 @@ import 'package:work_timer_employer_panel/models/workspace.dart';
 
 void main() {
   group('workspaceQualifiesForEmployerPanel', () {
-    test('employer A: shared + slug + domain + optional linked emails', () {
+    test('shared + work email + domain match', () {
       final w = Workspace(
         id: 'wa',
         name: 'A',
@@ -14,25 +14,21 @@ void main() {
         employeeWorkEmail: 'bob@acme.com',
         employeeWorkEmailDomain: 'acme.com',
         isSharedWithEmployer: true,
-        linkedEmployerEmails: ['boss@acme.com'],
       );
       expect(
         workspaceQualifiesForEmployerPanel(
           w: w,
-          employeeEmailLower: 'bob@acme.com',
+          employeeWorkEmailLower: 'bob@acme.com',
           employerDomain: 'acme.com',
-          normalizedCompanySlug: 'acme',
-          employerEmailLower: 'boss@acme.com',
         ),
         true,
       );
     });
 
-    test('employer B: wrong linkedEmployerEmails → false', () {
+    test('linkedEmployerEmails ignored — not used for access', () {
       final w = Workspace(
         id: 'wb',
         name: 'B',
-        companySlug: 'beta',
         employeeWorkEmail: 'bob@beta.com',
         employeeWorkEmailDomain: 'beta.com',
         isSharedWithEmployer: true,
@@ -41,10 +37,44 @@ void main() {
       expect(
         workspaceQualifiesForEmployerPanel(
           w: w,
-          employeeEmailLower: 'bob@beta.com',
+          employeeWorkEmailLower: 'bob@beta.com',
           employerDomain: 'beta.com',
-          normalizedCompanySlug: 'beta',
-          employerEmailLower: 'boss@beta.com',
+        ),
+        true,
+      );
+    });
+
+    test('wrong work email → false', () {
+      final w = Workspace(
+        id: 'w',
+        name: 'W',
+        employeeWorkEmail: 'bob@acme.com',
+        employeeWorkEmailDomain: 'acme.com',
+        isSharedWithEmployer: true,
+      );
+      expect(
+        workspaceQualifiesForEmployerPanel(
+          w: w,
+          employeeWorkEmailLower: 'other@acme.com',
+          employerDomain: 'acme.com',
+        ),
+        false,
+      );
+    });
+
+    test('domain mismatch → false', () {
+      final w = Workspace(
+        id: 'w',
+        name: 'W',
+        employeeWorkEmail: 'bob@acme.com',
+        employeeWorkEmailDomain: 'acme.com',
+        isSharedWithEmployer: true,
+      );
+      expect(
+        workspaceQualifiesForEmployerPanel(
+          w: w,
+          employeeWorkEmailLower: 'bob@acme.com',
+          employerDomain: 'other.com',
         ),
         false,
       );
@@ -54,7 +84,6 @@ void main() {
       final w = Workspace(
         id: 'p',
         name: 'Private',
-        companySlug: 'acme',
         employeeWorkEmail: 'bob@acme.com',
         employeeWorkEmailDomain: 'acme.com',
         isSharedWithEmployer: false,
@@ -62,13 +91,37 @@ void main() {
       expect(
         workspaceQualifiesForEmployerPanel(
           w: w,
-          employeeEmailLower: 'bob@acme.com',
+          employeeWorkEmailLower: 'bob@acme.com',
           employerDomain: 'acme.com',
-          normalizedCompanySlug: 'acme',
-          employerEmailLower: 'boss@acme.com',
         ),
         false,
       );
+    });
+  });
+
+  group('filterWorkspacesForEmployerWorkEmailAccess', () {
+    test('dedupes by workspace id and keeps both workspaces same email', () {
+      final w1 = Workspace(
+        id: 'a',
+        name: 'A',
+        employeeWorkEmail: 'kuba@firma.pl',
+        employeeWorkEmailDomain: 'firma.pl',
+        isSharedWithEmployer: true,
+      );
+      final w2 = Workspace(
+        id: 'b',
+        name: 'B',
+        employeeWorkEmail: 'kuba@firma.pl',
+        employeeWorkEmailDomain: 'firma.pl',
+        isSharedWithEmployer: true,
+      );
+      final out = filterWorkspacesForEmployerWorkEmailAccess(
+        [w1, w2, w1],
+        employeeWorkEmailLower: 'kuba@firma.pl',
+        employerDomain: 'firma.pl',
+      );
+      expect(out.length, 2);
+      expect(out.map((e) => e.id).toSet(), {'a', 'b'});
     });
   });
 

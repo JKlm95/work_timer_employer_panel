@@ -602,8 +602,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final wsMap = {for (final w in workspaces) w.id: w};
     final filtered = entries.where((e) {
       if (e.isDeleted || e.end == null) return false;
-      return wsMap[e.workspaceId]?.companySlug?.toLowerCase() ==
-          tr.companySlug.toLowerCase();
+      return wsMap[e.workspaceId] != null;
     }).toList();
     final hours = calc.hoursForEntries(filtered);
     final money = calc.estimatedAmountByCurrency(

@@ -4,13 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/debug/live_status_debug_config.dart';
-import '../core/utils/company_slug_utils.dart';
 import '../core/utils/employer_entry_soft_patch.dart';
 import '../core/utils/email_domain_utils.dart';
 import '../core/utils/employee_presence_utils.dart';
 import '../core/utils/employer_workspace_query_utils.dart';
 import '../core/utils/report_period.dart';
+import '../core/utils/work_email_validation.dart';
 import '../models/employee_live_status.dart';
+import '../models/employee_work_email_index.dart';
 import '../models/employer_group.dart';
 import '../core/utils/tracked_workspace_policy.dart' as twp;
 import '../models/tracked_employee.dart';
@@ -254,7 +255,6 @@ class FirestoreService {
         'Employer email domain is required to rebuild workspace access.',
       );
     }
-    final employerEmailLower = employerEmail.trim().toLowerCase();
     await ensureTrackedEmployeeUidAccessDocs(employerUid);
     final trackedSnap = await _employerTracked(employerUid).get();
     var written = 0;
@@ -262,41 +262,47 @@ class FirestoreService {
     for (final d in trackedSnap.docs) {
       final data = d.data();
       final employeeUid = (data['employeeUid'] as String?)?.trim() ?? '';
-      final emailLower =
-          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
-      final companySlug =
-          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
-      final companyName = (data['companyName'] as String?)?.trim() ?? '';
-      if (employeeUid.isEmpty || emailLower.isEmpty || companySlug.isEmpty) {
-        continue;
+      final workLower =
+          (data['employeeWorkEmailLower'] as String?)?.trim().toLowerCase() ??
+          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ??
+          '';
+      var workDomain =
+          (data['employeeWorkEmailDomain'] as String?)?.trim().toLowerCase() ??
+          '';
+      if (workDomain.isEmpty && workLower.isNotEmpty) {
+        workDomain = emailDomain(workLower) ?? '';
       }
+      final companyName = (data['companyName'] as String?)?.trim() ?? '';
+      final fallbackSlug =
+          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
+      if (employeeUid.isEmpty || workLower.isEmpty) continue;
+      if (workDomain.isNotEmpty && workDomain != employerDomain) continue;
       final workspaces = await fetchEmployeeWorkspaces(
         employeeUid,
         preferServer: preferServer,
       );
       for (final w in workspaces) {
-        if ((w.companySlug ?? '').trim().toLowerCase() != companySlug) continue;
         if (!twp.workspaceQualifiesForEmployerPanel(
           w: w,
-          employeeEmailLower: emailLower,
+          employeeWorkEmailLower: workLower,
           employerDomain: employerDomain,
-          normalizedCompanySlug: companySlug,
-          employerEmailLower: employerEmailLower,
         )) {
           continue;
         }
         final id = TrackedWorkspaceAccess.docIdFor(employeeUid, w.id);
+        final wSlug = (w.companySlug ?? '').trim().toLowerCase();
+        final slugOut = wSlug.isNotEmpty ? wSlug : fallbackSlug;
         byEmployee.putIfAbsent(employeeUid, () => <TrackedWorkspaceAccess>{});
         byEmployee[employeeUid]!.add(
           TrackedWorkspaceAccess(
             accessId: id,
             employeeUid: employeeUid,
             workspaceId: w.id,
-            employeeEmailLower: emailLower,
+            employeeEmailLower: workLower,
             companyName: companyName.isNotEmpty
                 ? companyName
                 : (w.companyName ?? ''),
-            companySlug: companySlug,
+            companySlug: slugOut,
             workspaceName: w.name,
           ),
         );
@@ -325,7 +331,6 @@ class FirestoreService {
   Future<void> _syncTrackedWorkspacesForEmployeeUid({
     required String employerUid,
     required String employeeUid,
-    required String employerEmailLower,
     required String employerDomain,
   }) async {
     final uid = employeeUid.trim();
@@ -342,34 +347,42 @@ class FirestoreService {
     final desired = <TrackedWorkspaceAccess>{};
     for (final d in remaining.docs) {
       final data = d.data();
-      final emailLower =
-          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
-      final companySlug =
-          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
+      final workLower =
+          (data['employeeWorkEmailLower'] as String?)?.trim().toLowerCase() ??
+          (data['employeeEmailLower'] as String?)?.trim().toLowerCase() ??
+          '';
+      var workDomain =
+          (data['employeeWorkEmailDomain'] as String?)?.trim().toLowerCase() ??
+          '';
+      if (workDomain.isEmpty && workLower.isNotEmpty) {
+        workDomain = emailDomain(workLower) ?? '';
+      }
       final companyName = (data['companyName'] as String?)?.trim() ?? '';
-      if (emailLower.isEmpty || companySlug.isEmpty) continue;
+      final fallbackSlug =
+          (data['companySlug'] as String?)?.trim().toLowerCase() ?? '';
+      if (workLower.isEmpty) continue;
+      if (workDomain.isNotEmpty && workDomain != employerDomain) continue;
       for (final w in workspaces) {
-        if ((w.companySlug ?? '').trim().toLowerCase() != companySlug) continue;
         if (!twp.workspaceQualifiesForEmployerPanel(
           w: w,
-          employeeEmailLower: emailLower,
+          employeeWorkEmailLower: workLower,
           employerDomain: employerDomain,
-          normalizedCompanySlug: companySlug,
-          employerEmailLower: employerEmailLower,
         )) {
           continue;
         }
         final id = TrackedWorkspaceAccess.docIdFor(uid, w.id);
+        final wSlug = (w.companySlug ?? '').trim().toLowerCase();
+        final slugOut = wSlug.isNotEmpty ? wSlug : fallbackSlug;
         desired.add(
           TrackedWorkspaceAccess(
             accessId: id,
             employeeUid: uid,
             workspaceId: w.id,
-            employeeEmailLower: emailLower,
+            employeeEmailLower: workLower,
             companyName: companyName.isNotEmpty
                 ? companyName
                 : (w.companyName ?? ''),
-            companySlug: companySlug,
+            companySlug: slugOut,
             workspaceName: w.name,
           ),
         );
@@ -511,6 +524,48 @@ class FirestoreService {
     final doc = await _db.collection('userEmailIndex').doc(emailLower).get();
     if (!doc.exists || doc.data() == null) return null;
     return UserEmailIndex.fromDoc(doc.id, doc.data()!);
+  }
+
+  /// `employeeWorkEmailIndex/{workEmailLower}` — mobile-maintained; used to link employer → employee.
+  Future<EmployeeWorkEmailIndex?> fetchEmployeeWorkEmailIndex(
+    String workEmailLower,
+  ) async {
+    final key = normalizeWorkEmailLower(workEmailLower);
+    if (key.isEmpty) return null;
+    final doc = await _db.collection('employeeWorkEmailIndex').doc(key).get();
+    if (!doc.exists || doc.data() == null) return null;
+    return EmployeeWorkEmailIndex.fromDoc(doc.id, doc.data()!);
+  }
+
+  /// Loads workspace docs from [indexWorkspaceIds] and keeps only those matching work email + domain.
+  Future<List<Workspace>> filterWorkspacesForEmployerDomain({
+    required String employeeUid,
+    required List<String> indexWorkspaceIds,
+    required String employeeWorkEmailLower,
+    required String employerDomain,
+    bool preferServer = false,
+  }) async {
+    final ids = normalizedWorkspaceIdSet(indexWorkspaceIds);
+    if (ids.isEmpty) return [];
+    final opts = GetOptions(
+      source: preferServer ? Source.server : Source.serverAndCache,
+    );
+    final col = _db
+        .collection('users')
+        .doc(employeeUid.trim())
+        .collection('workspaces');
+    final loaded = <Workspace>[];
+    for (final id in ids) {
+      final d = await col.doc(id).get(opts);
+      if (d.exists && d.data() != null) {
+        loaded.add(Workspace.fromDoc(d.id, d.data()!));
+      }
+    }
+    return twp.filterWorkspacesForEmployerWorkEmailAccess(
+      loaded,
+      employeeWorkEmailLower: employeeWorkEmailLower,
+      employerDomain: employerDomain,
+    );
   }
 
   /// Reads employee workspaces — sensitive; gated by rules in production.
@@ -1050,7 +1105,10 @@ class FirestoreService {
       final list = <TrackedEmployee>[];
       for (final d in s.docs) {
         final base = TrackedEmployee.fromDoc(d.id, d.data());
-        final idx = await getUserEmailIndex(base.employeeEmailLower);
+        final idxKey = base.employeeWorkEmailLower.isNotEmpty
+            ? base.employeeWorkEmailLower
+            : base.employeeEmailLower;
+        final idx = await getUserEmailIndex(idxKey);
         list.add(base.mergedWithUserEmailIndex(idx));
       }
       list.sort((a, b) {
@@ -1129,7 +1187,6 @@ class FirestoreService {
     required String employerEmail,
   }) async {
     final employerDomain = emailDomain(employerEmail);
-    final employerEmailLower = employerEmail.trim().toLowerCase();
     final ref = _employerTracked(employerUid).doc(trackedId);
     final snap = await ref.get();
     final removedUid = snap.data()?['employeeUid'] as String?;
@@ -1139,7 +1196,6 @@ class FirestoreService {
         await _syncTrackedWorkspacesForEmployeeUid(
           employerUid: employerUid,
           employeeUid: removedUid.trim(),
-          employerEmailLower: employerEmailLower,
           employerDomain: employerDomain,
         );
       } else {
@@ -1224,7 +1280,9 @@ class FirestoreService {
     final ref = _employerTracked(employerUid).doc(trackedDocId);
     final d = await ref.get();
     if (!d.exists || d.data() == null) return false;
-    final emailLower = d.data()!['employeeEmailLower'] as String?;
+    final emailLower =
+        d.data()!['employeeWorkEmailLower'] as String? ??
+        d.data()!['employeeEmailLower'] as String?;
     if (emailLower == null || emailLower.isEmpty) return false;
     final idx = await getUserEmailIndex(emailLower);
     if (idx == null) return false;
@@ -1239,7 +1297,9 @@ class FirestoreService {
     final snap = await _employerTracked(employerUid).get();
     var n = 0;
     for (final d in snap.docs) {
-      final emailLower = d.data()['employeeEmailLower'] as String?;
+      final emailLower =
+          d.data()['employeeWorkEmailLower'] as String? ??
+          d.data()['employeeEmailLower'] as String?;
       if (emailLower == null || emailLower.isEmpty) continue;
       final idx = await getUserEmailIndex(emailLower);
       if (idx == null) continue;
@@ -1419,97 +1479,129 @@ class FirestoreService {
     }
   }
 
-  /// Validates domain + workspace match (company/slug only — not names), then writes `trackedEmployees`.
-  /// Personal fields on the new doc come only from [getUserEmailIndex].
-  Future<void> linkEmployee({
+  /// Links an employee by **work email** via `employeeWorkEmailIndex` and shared workspace fields.
+  Future<void> linkEmployeeByWorkEmail({
     required String employerUid,
     required String employerEmail,
     required String employeeWorkEmailInput,
-    required String companyNameInput,
   }) async {
-    final employerDomain = emailDomain(employerEmail);
+    final employerEmailTrimmed = employerEmail.trim();
+    if (employerEmailTrimmed.isEmpty) {
+      throw EmployerLinkException(
+        'Could not read your employer account email. Please sign in again.',
+      );
+    }
+    final employerDomain = emailDomain(employerEmailTrimmed);
     if (employerDomain == null) {
       throw EmployerLinkException(
-        'Employer email domain does not match employee work email domain',
+        'Could not read your employer account email. Please sign in again.',
       );
     }
 
-    final employeeEmailLower = employeeWorkEmailInput.trim().toLowerCase();
-    final normalizedSlug = normalizeCompanySlugInput(companyNameInput);
-    if (normalizedSlug.isEmpty) {
-      throw EmployerLinkException('No shared project found for this company');
+    final workEmailLower = normalizeWorkEmailLower(employeeWorkEmailInput);
+    if (!isPlausibleWorkEmail(workEmailLower)) {
+      throw EmployerLinkException('Enter a valid employee work email.');
     }
 
-    final employerEmailLower = employerEmail.trim().toLowerCase();
-
-    final index = await getUserEmailIndex(employeeEmailLower);
-    if (index == null || index.uid.isEmpty) {
-      throw EmployerLinkException('Employee not found');
+    final workIdx = await fetchEmployeeWorkEmailIndex(workEmailLower);
+    if (workIdx == null || workIdx.uid.trim().isEmpty) {
+      throw EmployerLinkException(
+        'No shared workspace found for this work email.',
+      );
     }
 
-    final employeeUid = index.uid.trim();
+    if (workIdx.workspaceIds.isEmpty) {
+      throw EmployerLinkException('This work email has no shared workspaces.');
+    }
+
+    final idxDomain = workIdx.domain.trim().toLowerCase();
+    if (idxDomain.isEmpty || idxDomain != employerDomain) {
+      throw EmployerLinkException(
+        'This workspace belongs to a different company domain.',
+      );
+    }
+
+    final employeeUid = workIdx.uid.trim();
     await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
 
     try {
-      final workspaces = await fetchEmployeeWorkspaces(employeeUid);
+      final qualifying = await filterWorkspacesForEmployerDomain(
+        employeeUid: employeeUid,
+        indexWorkspaceIds: workIdx.workspaceIds,
+        employeeWorkEmailLower: workEmailLower,
+        employerDomain: employerDomain,
+      );
 
-      final qualifyingForSlug = workspaces.where((w) {
-        if ((w.companySlug ?? '').trim().toLowerCase() != normalizedSlug) {
-          return false;
-        }
-        return twp.workspaceQualifiesForEmployerPanel(
-          w: w,
-          employeeEmailLower: employeeEmailLower,
-          employerDomain: employerDomain,
-          normalizedCompanySlug: normalizedSlug,
-          employerEmailLower: employerEmailLower,
-        );
-      }).toList();
-
-      if (qualifyingForSlug.isEmpty) {
-        throw EmployerLinkException('No shared project found for this company');
-      }
-
-      final matched = qualifyingForSlug.first;
-      final wsDomain = matched.employeeWorkEmailDomain?.trim().toLowerCase();
-      if (wsDomain == null || wsDomain.isEmpty || wsDomain != employerDomain) {
+      if (qualifying.isEmpty) {
         throw EmployerLinkException(
-          'Employer email domain does not match employee work email domain',
+          'No shared workspace for your company domain.',
         );
       }
 
-      final existing = await _employerTracked(employerUid)
-          .where('employeeUid', isEqualTo: employeeUid)
-          .where('companySlug', isEqualTo: normalizedSlug)
-          .limit(1)
-          .get();
+      final existingRows = await _employerTracked(
+        employerUid,
+      ).where('employeeUid', isEqualTo: employeeUid).get();
 
-      if (existing.docs.isNotEmpty) {
-        final doc = existing.docs.first;
-        final patch = _personalEmployeePatchFromIndex(index, doc.data());
-        if (patch.isNotEmpty) {
-          await doc.reference.update(patch);
+      var duplicate = false;
+      for (final doc in existingRows.docs) {
+        final m = doc.data();
+        final wwl =
+            (m['employeeWorkEmailLower'] as String?)?.trim().toLowerCase() ??
+            '';
+        final el =
+            (m['employeeEmailLower'] as String?)?.trim().toLowerCase() ?? '';
+        if (wwl == workEmailLower || (wwl.isEmpty && el == workEmailLower)) {
+          duplicate = true;
+          final indexProfile = await getUserEmailIndex(workEmailLower);
+          final patch = <String, dynamic>{
+            'employeeWorkEmailLower': workEmailLower,
+            'employeeWorkEmailDomain': idxDomain,
+          };
+          if (indexProfile != null) {
+            patch.addAll(_personalEmployeePatchFromIndex(indexProfile, m));
+          }
+          if (patch.isNotEmpty) await doc.reference.update(patch);
+          break;
         }
+      }
+
+      if (duplicate) {
         await _setTrackedEmployeeUidAccess(employerUid, employeeUid);
         await _syncTrackedWorkspacesForEmployeeUid(
           employerUid: employerUid,
           employeeUid: employeeUid,
-          employerEmailLower: employerEmailLower,
           employerDomain: employerDomain,
         );
         throw EmployerLinkException(
-          'This employee is already on your list for this company.',
+          'This employee is already linked with this work email.',
         );
       }
 
+      final indexProfile = await getUserEmailIndex(workEmailLower);
+      final first = qualifying.first;
+      final displayEmail = employeeWorkEmailInput.trim();
+
+      final Map<String, dynamic> identityMap;
+      if (indexProfile != null && indexProfile.uid.trim().isNotEmpty) {
+        identityMap = _personalEmployeeWriteMap(
+          indexProfile,
+          employeeEmailFallback: displayEmail,
+          emailLowerFallback: workEmailLower,
+        );
+      } else {
+        identityMap = {
+          'employeeUid': employeeUid,
+          'employeeEmail': displayEmail,
+          'employeeEmailLower': workEmailLower,
+        };
+      }
+
       await _employerTracked(employerUid).add({
-        ..._personalEmployeeWriteMap(
-          index,
-          employeeEmailFallback: employeeWorkEmailInput.trim(),
-          emailLowerFallback: employeeEmailLower,
-        ),
-        'companyName': matched.companyName ?? companyNameInput.trim(),
-        'companySlug': normalizedSlug,
+        ...identityMap,
+        'employeeWorkEmailLower': workEmailLower,
+        'employeeWorkEmailDomain': idxDomain,
+        'companyName': first.companyName ?? '',
+        'companySlug': (first.companySlug ?? '').trim(),
         'addedAt': FieldValue.serverTimestamp(),
         'groupIds': <String>[],
       });
@@ -1517,13 +1609,11 @@ class FirestoreService {
       await _syncTrackedWorkspacesForEmployeeUid(
         employerUid: employerUid,
         employeeUid: employeeUid,
-        employerEmailLower: employerEmailLower,
         employerDomain: employerDomain,
       );
     } catch (e) {
       final dup =
-          e is EmployerLinkException &&
-          e.message.contains('already on your list');
+          e is EmployerLinkException && e.message.contains('already linked');
       if (!dup) {
         await _maybeRevokeTrackedEmployeeUidIfUnused(employerUid, employeeUid);
       }

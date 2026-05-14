@@ -102,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'Rebuild `trackedWorkspaces` from each linked employee’s shared '
-                        'workspaces (isSharedWithEmployer, company slug, domain). '
+                        'workspaces (isSharedWithEmployer, employee work email + domain). '
                         'Run after deploying the new access model or when data looks wrong.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,

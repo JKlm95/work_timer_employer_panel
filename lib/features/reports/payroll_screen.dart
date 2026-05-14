@@ -540,7 +540,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
         if (e.isDeleted || e.end == null) return false;
         final ws = wsMap[e.workspaceId];
         if (ws == null) return false;
-        return ws.companySlug?.toLowerCase() == t.companySlug.toLowerCase();
+        return true;
       }).toList();
 
       final active = _billableOnly

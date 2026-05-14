@@ -10,11 +10,14 @@ TrackedEmployee _employee({
   String? lastName,
   String? displayName,
 }) {
+  final el = email.toLowerCase();
   return TrackedEmployee(
     id: '1',
     employeeUid: 'uid',
     employeeEmail: email,
-    employeeEmailLower: email.toLowerCase(),
+    employeeEmailLower: el,
+    employeeWorkEmailLower: el,
+    employeeWorkEmailDomain: 'b.c',
     firstName: firstName,
     lastName: lastName,
     displayName: displayName,

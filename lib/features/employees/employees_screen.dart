@@ -628,8 +628,7 @@ class _EmployeesTableState extends State<_EmployeesTable> {
       final filtered = entries.where((e) {
         if (e.isDeleted || e.end == null) return false;
         if (wsMap[e.workspaceId] == null) return false;
-        return wsMap[e.workspaceId]?.companySlug?.toLowerCase() ==
-            t.companySlug.toLowerCase();
+        return true;
       }).toList();
       final hours = _calc.hoursForEntries(filtered);
       final money = _calc.estimatedAmountByCurrency(

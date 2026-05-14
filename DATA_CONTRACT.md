@@ -9,7 +9,8 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 - **Źródło prawdy:** tak — lista „kogo śledzi” dany pracodawca.
 - **Zapisuje:** panel (dodanie / usunięcie wpisu, `groupIds`, ewentualne pola z linkowania).
 - **Czyta:** panel.
-- **Uwaga:** imię, nazwisko, `displayName`, `employeeUid` / email w streamie są **sczytywane z `userEmailIndex`** i mergowane w UI (`TrackedEmployee.mergedWithUserEmailIndex`) — dokument `trackedEmployees` może być **cache’em** danych osobowych względem indeksu.
+- **Uwaga:** imię, nazwisko, `displayName`, `employeeUid` w streamie są **sczytywane z `userEmailIndex`** (klucz: `employeeWorkEmailLower` z dokumentu, z fallbackiem do `employeeEmailLower`) i mergowane w UI (`TrackedEmployee.mergedWithUserEmailIndex`) — dokument `trackedEmployees` może być **cache’em** danych osobowych względem indeksu.
+- **Linkowanie:** odbywa się po **służbowym e-mailu pracownika** (`employeeWorkEmailLower` / `employeeWorkEmailDomain`) i indeksie **`employeeWorkEmailIndex`** — patrz sekcja poniżej.
 
 ### `employers/{employerUid}/trackedEmployeeUids/{employeeUid}`
 
@@ -23,9 +24,9 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 - **ID dokumentu:** `accessId = "${employeeUid}_${workspaceId}"` (np. `abc123_ws1`).
 - **Źródło prawdy:** tak — **rzeczywisty zakres danych** widocznych w panelu dla danego workspace’u pracownika (wpisy, timesheet, dashboard, billing, raporty).
 - **Pola (MVP panelu):** `employeeUid`, `workspaceId`, `employeeEmailLower`, `companyName`, `companySlug`, `workspaceName`, `createdAt`, `updatedAt` (timestamps serwera przy zapisie).
-- **Zapisuje:** panel przy **linkowaniu** pracownika (wszystkie kwalifikujące się workspace’y dla wybranej firmy), przy **usunięciu** wpisu z listy (przeliczenie / skasowanie dostępu), oraz jawnie przez **`rebuildTrackedWorkspaceAccess`** (Ustawienia → *Rebuild workspace access*).
+- **Zapisuje:** panel przy **linkowaniu** pracownika (wszystkie kwalifikujące się workspace’y dla wpisanego work email + domeny pracodawcy), przy **usunięciu** wpisu z listy (przeliczenie / skasowanie dostępu), oraz jawnie przez **`rebuildTrackedWorkspaceAccess`** (Ustawienia → *Rebuild workspace access*).
 - **Czyta:** panel (`fetchTrackedWorkspaces`, stream); reguły Firestore do odczytu `entries` / `workspaces` pracownika w kontekście pracodawcy.
-- **Kwalifikacja workspace’u:** m.in. `isSharedWithEmployer == true`, zgodność slug/domeny z kontekstem linku, opcjonalnie lista `linkedEmployerEmails` na dokumencie workspace (logika w `lib/core/utils/tracked_workspace_policy.dart`).
+- **Kwalifikacja workspace’u:** `isSharedWithEmployer == true`, `employeeWorkEmail` (lowercase) == work email z linku, `employeeWorkEmailDomain` (lowercase) == domena z konta Firebase Auth pracodawcy. **`linkedEmployerEmails` nie jest używane** do dostępu w panelu.
 
 ### `employers/{employerUid}/groups/{groupId}`
 
@@ -53,9 +54,15 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 - **Zapisuje:** panel **nie**.
 - **Live amount:** kwoty liczone **w pamięci UI** z `live/status` + map workspace’ów — **nie są** zapisywane do Firestore (patrz `TECHNICAL.md`). Dla pracodawcy kwota „live running” jest liczona **tylko** gdy `activeWorkspaceId` jest na liście workspace’ów z `trackedWorkspaces` (zgodnie z mapą użytą na dashboardzie).
 
+### `employeeWorkEmailIndex/{workEmailLower}`
+
+- **Źródło prawdy:** tak — mapowanie **work email (lowercase) → uid**, domena, lista `workspaceIds` gdzie pracownik ustawił ten sam work email i udostępnił pracodawcy.
+- **Zapisuje:** **mobile** (dokument należy do `uid` z pola `uid` — reguły: zapis tylko gdy `request.auth.uid == uid`).
+- **Czyta:** panel przy **Add employee** (`fetchEmployeeWorkEmailIndex`) i pośrednio przy odbudowie dostępu (workspace’y filtrowane po polach workspace + domena konta pracodawcy).
+
 ### `userEmailIndex/{emailLower}`
 
-- **Źródło prawdy:** tak dla mapowania **email → uid** i pól profilu używanych przy linkowaniu / wyświetlaniu.
+- **Źródło prawdy:** tak dla mapowania **email → uid** i pól profilu (imię itd.) przy wyświetlaniu listy — **klucz indeksu** powinien odpowiadać **work email** zapisanym na `trackedEmployees` (`employeeWorkEmailLower`), jeśli ten sam adres jest w indeksie profilu.
 - **Zapisuje:** **mobile** (po logowaniu / aktualizacji profilu — wymaganie operacyjne).
 - **Czyta:** panel (`getUserEmailIndex`, stream `trackedEmployees`).
 - **Kopia / cache:** pola osobowe na `trackedEmployees` mogą być nieaktualne względem indeksu — UI preferuje indeks po merge.
@@ -71,8 +78,9 @@ Ten dokument opisuje **ścieżki dokumentów** współdzielone przez aplikację 
 | Indeks UID pracownika (employer) | `employers/.../trackedEmployeeUids` | read/write — **indeks relacji**, nie filtr wpisów |
 | **Zakres workspace’ów (employer)** | `employers/.../trackedWorkspaces` | read/write — **źródło prawdy dla widocznych danych** |
 | Grupy | `employers/.../groups` | read/write |
-| Indeks email | `userEmailIndex` | read (write: mobile) |
+| Indeks work email | `employeeWorkEmailIndex` | read (write: mobile, owner uid) |
+| Indeks email (profil) | `userEmailIndex` | read (write: mobile) |
 
 ## Spójność z mobile
 
-Mobile musi utrzymywać: **`userEmailIndex`**, **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z tym samym modelem pól, którego używa panel (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`, `billingRatePercent`, pola audytu jeśli używane). Dla udostępniania workspace’u pracodawcy: **`isSharedWithEmployer`** oraz opcjonalnie **`linkedEmployerEmails`** (lowercase). Panel pracodawcy może **dopisywać i poprawiać** wpisy w `entries` u śledzonych pracowników — **wyłącznie** w workspace’ach obecnych w `trackedWorkspaces` — zgodnie z `firestore.rules`.
+Mobile musi utrzymywać: **`employeeWorkEmailIndex`** (po udostępnieniu workspace’u pracodawcy), **`userEmailIndex`** (opcjonalnie dla imion na liście), **`live/status`** przy pracy timerem, oraz wpisy w **`entries`** i **`workspaces`** zgodnie z modelem pól panelu (m.in. `companySlug`, `isDeleted`, `start` / `end`, `hourlyRate` / `currency`, `billingRatePercent`, pola audytu jeśli używane). Dla udostępniania workspace’u: **`isSharedWithEmployer`**, **`employeeWorkEmail`**, **`employeeWorkEmailDomain`** (wyliczany). **`linkedEmployerEmails`** nie jest już używane do dostępu pracodawcy w tym panelu. Panel może **dopisywać i poprawiać** wpisy w `entries` u śledzonych pracowników — **wyłącznie** w workspace’ach obecnych w `trackedWorkspaces` — zgodnie z `firestore.rules`.

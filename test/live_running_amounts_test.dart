@@ -11,6 +11,8 @@ TrackedEmployee _t(String uid) {
     employeeUid: uid,
     employeeEmail: 'e@test',
     employeeEmailLower: 'e@test',
+    employeeWorkEmailLower: 'e@test',
+    employeeWorkEmailDomain: 'test',
     companyName: 'Co',
     companySlug: 'co',
   );
